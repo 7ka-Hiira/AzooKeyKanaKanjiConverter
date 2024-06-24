@@ -48,6 +48,7 @@ class ZenzContext {
         llama_backend_init()
         var model_params = llama_model_default_params()
         model_params.use_mmap = true
+        model_params.n_gpu_layers = 13
         let model = llama_load_model_from_file(path, model_params)
         guard let model else {
             debug("Could not load model at \(path)")
