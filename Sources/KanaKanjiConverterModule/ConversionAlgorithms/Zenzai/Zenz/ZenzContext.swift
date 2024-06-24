@@ -110,6 +110,8 @@ final class ZenzContext {
         // CPU 専用: GPU へのオフロードを無効化
         model_params.n_gpu_layers = 0
         model_params.split_mode = LLAMA_SPLIT_MODE_NONE
+        #else
+        model_params.n_gpu_layers = -1
         #endif
         let model = llama_model_load_from_file(path, model_params)
         guard let model else {
