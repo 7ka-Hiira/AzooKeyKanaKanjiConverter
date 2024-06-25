@@ -4,19 +4,19 @@ import SwiftUtils
 @MainActor final class Zenz {
     package var resourceURL: URL
     private var zenzContext: ZenzContext?
-    init(resourceURL: URL) throws {
+    init(resourceURL: URL, gpuLayers: Int32) throws {
         self.resourceURL = resourceURL
         do {
             #if canImport(Darwin)
             if #available(iOS 16, macOS 13, *) {
-                self.zenzContext = try ZenzContext.createContext(path: resourceURL.path(percentEncoded: false))
+                self.zenzContext = try ZenzContext.createContext(path: resourceURL.path(percentEncoded: false), gpuLayers: gpuLayers)
             } else {
                 // this is not percent-encoded
-                self.zenzContext = try ZenzContext.createContext(path: resourceURL.path)
+                self.zenzContext = try ZenzContext.createContext(path: resourceURL.path, gpuLayers: gpuLayers)
             }
             #else
             // this is not percent-encoded
-            self.zenzContext = try ZenzContext.createContext(path: resourceURL.path)
+            self.zenzContext = try ZenzContext.createContext(path: resourceURL.path, gpuLayers: gpuLayers)
             #endif
             debug("Loaded model \(resourceURL.lastPathComponent)")
         } catch {

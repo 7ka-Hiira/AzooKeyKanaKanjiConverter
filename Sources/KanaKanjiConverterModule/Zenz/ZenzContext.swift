@@ -44,11 +44,11 @@ class ZenzContext {
         return ctx_params
     }
 
-    static func createContext(path: String) throws -> ZenzContext {
+    static func createContext(path: String, gpuLayers: Int32) throws -> ZenzContext {
         llama_backend_init()
         var model_params = llama_model_default_params()
         model_params.use_mmap = true
-        model_params.n_gpu_layers = 13
+        model_params.n_gpu_layers = gpuLayers
         let model = llama_load_model_from_file(path, model_params)
         guard let model else {
             debug("Could not load model at \(path)")

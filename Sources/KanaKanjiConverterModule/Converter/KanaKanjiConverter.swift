@@ -40,13 +40,13 @@ import SwiftUtils
         self.lastData = nil
     }
 
-    private func getModel(modelURL: URL) -> Zenz? {
+    private func getModel(modelURL: URL, gpuLayers: Int32) -> Zenz? {
         if let model = self.zenz, model.resourceURL == modelURL {
             self.zenzStatus = "load \(modelURL.absoluteString)"
             return model
         } else {
             do {
-                self.zenz = try Zenz(resourceURL: modelURL)
+                self.zenz = try Zenz(resourceURL: modelURL, gpuLayers: gpuLayers)
                 self.zenzStatus = "load \(modelURL.absoluteString)"
                 return self.zenz
             } catch {
@@ -567,7 +567,7 @@ import SwiftUtils
         }
 
         // FIXME: enable cache based zenzai
-        if zenzaiMode.enabled, let model = self.getModel(modelURL: zenzaiMode.weightURL) {
+        if zenzaiMode.enabled, let model = self.getModel(modelURL: zenzaiMode.weightURL, gpuLayers: zenzaiMode.gpuLayers) {
             let (result, nodes, cache) = self.converter.all_zenzai(inputData, zenz: model, zenzaiCache: self.zenzaiCache, inferenceLimit: zenzaiMode.inferenceLimit)
             self.zenzaiCache = cache
             self.previousInputData = inputData
