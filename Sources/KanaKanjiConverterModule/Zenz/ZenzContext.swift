@@ -124,17 +124,30 @@ class ZenzContext {
     enum CandidateEvaluationResult: Sendable, Equatable, Hashable {
         case error
         case pass(score: Float)
-        case fixRequired(prefixConstraint: String)
+        case fixRequired(prefixConstraint: [UInt8])
         case wholeResult(String)
     }
 
-    func evaluate_candidate(input: String, candidate: String) -> CandidateEvaluationResult {
+    func getLearningPriority(data: DicdataElement) -> Float {
+        // 文字数の長い候補ほど優先的に適用されるようにする
+        // 積極的な複合語化の効果を期待
+        return if 1 <= data.ruby.count && data.ruby.count <= 4 {
+            Float(data.ruby.count + 2)
+        } else if 5 <= data.ruby.count && data.ruby.count <= 15 {
+            Float(data.ruby.count * 2)
+        } else {
+            30
+        }
+    }
+
+    func evaluate_candidate(input: String, candidate: Candidate) -> CandidateEvaluationResult {
+        print("Evaluate", candidate)
         // For zenz-v1 model, \u{EE00} is a token used for 'start query', and \u{EE01} is a token used for 'start answer'
         // We assume \u{EE01}\(candidate) is always splitted into \u{EE01}_\(candidate) by zenz-v1 tokenizer
         let prompt = "\u{EE00}\(input)\u{EE01}"
         // Therefore, tokens = prompt_tokens + candidate_tokens is an appropriate operation.
         let prompt_tokens = self.tokenize(text: prompt, add_bos: true, add_eos: false)
-        let candidate_tokens = self.tokenize(text: candidate, add_bos: false, add_eos: false)
+        let candidate_tokens = self.tokenize(text: candidate.text, add_bos: false, add_eos: false)
         let tokens = prompt_tokens + candidate_tokens
         let startOffset = prompt_tokens.count - 1
         let pos_max = llama_kv_cache_seq_pos_max(self.context, 0)
@@ -144,6 +157,10 @@ class ZenzContext {
             return .error
         }
         let n_vocab = llama_n_vocab(model)
+        let is_learned_token: [(isLearned: Bool, priority: Float)] = Array(repeating: (false, 0), count: prompt_tokens.count) + candidate.data.flatMap {
+            // priorityは文字数にする→文字数が長いほど優先される
+            Array(repeating: ($0.metadata.contains(.isLearned), getLearningPriority(data: $0)), count: self.tokenize(text: $0.word, add_bos: false).count)
+        }
 
         var score: Float = 0
         for (i, token_id) in tokens.indexed().dropFirst(prompt_tokens.count) {
@@ -176,15 +193,16 @@ class ZenzContext {
                     let wholeResult = String(string.dropFirst(prompt.count))
                     return .wholeResult(wholeResult)
                 } else {
-                    var cchars = tokens[..<i].reduce(into: []) {
-                        $0.append(contentsOf: token_to_piece(token: $1))
+                    let actual_exp: Float = exp(logits[startIndex + Int(token_id)])
+                    // 学習されたトークンであり、なおかつactual_expのある程度大きければ、学習されたトークンを優先する
+                    let preferLearnedToken = is_learned_token[i].isLearned && actual_exp * is_learned_token[i].priority > max_exp
+                    if !preferLearnedToken {
+                        // adding "\0"
+                        let cchars = tokens[..<i].reduce(into: []) {
+                            $0.append(contentsOf: token_to_piece(token: $1))
+                        } + token_to_piece(token: max_token)
+                        return .fixRequired(prefixConstraint: cchars.dropFirst(prompt.utf8.count).map(UInt8.init))
                     }
-                    // adding "\0"
-                    cchars += token_to_piece(token: max_token) + [0]
-                    let string = String(cString: cchars)
-                    // 要求するべき制約を記述する
-                    let prefixConstraint = String(string.dropFirst(prompt.count))
-                    return .fixRequired(prefixConstraint: prefixConstraint)
                 }
             }
             score += log(max_exp) - log(exp_sum)
