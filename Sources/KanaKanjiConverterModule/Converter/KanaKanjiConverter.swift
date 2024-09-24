@@ -56,6 +56,20 @@ import SwiftUtils
         }
     }
 
+    public func predictNextCharacter(leftSideContext: String, count: Int, options: ConvertRequestOptions) -> [(character: Character, value: Float)] {
+        guard let zenz = self.getModel(modelURL: options.zenzaiMode.weightURL, gpuLayers: options.zenzaiMode.gpuLayers) else {
+            print("zenz-v2 model unavailable")
+            return []
+        }
+        guard options.zenzaiMode.versionDependentMode.version == .v2 else {
+            print("next character prediction requires zenz-v2 models, not zenz-v1")
+            return []
+        }
+        let results = zenz.predictNextCharacter(leftSideContext: leftSideContext, count: count)
+
+        return results
+    }
+
     /// 入力する言語が分かったらこの関数をなるべく早い段階で呼ぶことで、SpellCheckerの初期化が行われ、変換がスムーズになる
     public func setKeyboardLanguage(_ language: KeyboardLanguage) {
         if !checkerInitialized[language, default: false] {
@@ -464,7 +478,7 @@ import SwiftUtils
             // candidateのvalueをZenzaiの出力順に書き換えることで、このあとのrerank処理で騙されてくれるようになっている
             // より根本的には、`Candidate`にAI評価値をもたせるなどの方法が必要そう
             var first5 = Array(whole_sentence_unique_candidates.prefix(5))
-            var values = first5.map(\.value).sorted(by: >)
+            let values = first5.map(\.value).sorted(by: >)
             for (i, v) in zip(first5.indices, values) {
                 first5[i].value = v
             }
@@ -498,7 +512,13 @@ import SwiftUtils
         // 重複のない変換候補を作成するための集合
         var seenCandidate: Set<String> = full_candidate.mapSet {$0.text}
         // 文節のみ変換するパターン（上位5件）
-        let clause_candidates = self.getUniqueCandidate(clauseCandidates, seenCandidates: seenCandidate).min(count: 5, sortedBy: {$0.value > $1.value})
+        let clause_candidates = self.getUniqueCandidate(clauseCandidates, seenCandidates: seenCandidate).min(count: 5) {
+            if $0.correspondingCount == $1.correspondingCount {
+                $0.value > $1.value
+            } else {
+                $0.correspondingCount > $1.correspondingCount
+            }
+        }
         seenCandidate.formUnion(clause_candidates.map {$0.text})
 
         // 最初の辞書データ
@@ -552,7 +572,15 @@ import SwiftUtils
             item.withActions(self.getAppropriateActions(item))
             item.parseTemplate()
         }
-        return ConversionResult(mainResults: result, firstClauseResults: Array(clause_candidates))
+        // 文節のみ変換するパターン（上位5件）
+        let firstClauseResults = self.getUniqueCandidate(clauseCandidates).min(count: 5) {
+            if $0.correspondingCount == $1.correspondingCount {
+                $0.value > $1.value
+            } else {
+                $0.correspondingCount > $1.correspondingCount
+            }
+        }
+        return ConversionResult(mainResults: result, firstClauseResults: firstClauseResults)
     }
 
     /// 入力からラティスを構築する関数。状況に応じて呼ぶ関数を分ける。
@@ -568,7 +596,14 @@ import SwiftUtils
 
         // FIXME: enable cache based zenzai
         if zenzaiMode.enabled, let model = self.getModel(modelURL: zenzaiMode.weightURL, gpuLayers: zenzaiMode.gpuLayers) {
-            let (result, nodes, cache) = self.converter.all_zenzai(inputData, zenz: model, zenzaiCache: self.zenzaiCache, inferenceLimit: zenzaiMode.inferenceLimit, versionDependentConfig: zenzaiMode.versionDependentMode)
+            let (result, nodes, cache) = self.converter.all_zenzai(
+                inputData,
+                zenz: model,
+                zenzaiCache: self.zenzaiCache,
+                inferenceLimit: zenzaiMode.inferenceLimit,
+                requestRichCandidates: zenzaiMode.requestRichCandidates,
+                versionDependentConfig: zenzaiMode.versionDependentMode
+            )
             self.zenzaiCache = cache
             self.previousInputData = inputData
             return (result, nodes)

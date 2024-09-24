@@ -227,7 +227,8 @@ public struct ComposingText: Sendable {
                 return
             }
             let n_prefix = self.input[0 ..< inputCursorPosition].suffix {$0.character == "n" && $0.inputStyle == .roman2kana}
-            if n_prefix.count % 2 == 1 && !["n", "a", "i", "u", "e", "o", "y"].contains(first) {
+            if n_prefix.count % 2 == 1 && !["n", "a", "i", "u", "e", "o", "y"].contains(first)
+                && self.input.dropLast(n_prefix.count).last != .init(character: "x", inputStyle: .roman2kana) {
                 self.input[inputCursorPosition - 1] = InputElement(character: "ん", inputStyle: .direct)
                 self.input.insert(contentsOf: string.map {InputElement(character: $0, inputStyle: inputStyle)}, at: inputCursorPosition)
                 return
@@ -394,7 +395,6 @@ extension ComposingText {
         return false
     }
 
-    // MARK: 利用されていないAPI
     static func isLeftSideValid(first firstElement: InputElement, of originalElements: [InputElement], from leftIndex: Int) -> Bool {
         // leftIndexの位置にある`el`のチェック
         // 許されるパターンは以下の通り
@@ -425,14 +425,20 @@ extension ComposingText {
             return true
         }
         let last_2 = originalElements[0 ..< leftIndex].suffix(2)
-        if ["zl", "zk", "zj", "zh"].contains(last_2.reduce(into: "") {$0.append($1.character)}) {
+        if ["zl", "zk", "zj", "zh", "xn"].contains(last_2.reduce(into: "") {$0.append($1.character)}) {
             return true
         }
         let n_suffix = originalElements[0 ..< leftIndex].suffix(while: {$0.inputStyle == .roman2kana && $0.character == "n"})
+        // 末尾のnが偶数個で右側にnがなければvalid
         if n_suffix.count % 2 == 0 && !n_suffix.isEmpty {
             return true
         }
+        // 末尾のnが奇数個で、なお直後の文字が母音・ny-・nnではない場合はvalid
         if n_suffix.count % 2 == 1 && !["a", "i", "u", "e", "o", "y", "n"].contains(firstElement.character) {
+            return true
+        }
+        // 末尾のnが奇数個で、なおかつその1つ前の文字がxであればvalid (xn→ん、への対応)
+        if n_suffix.count % 2 == 1 && originalElements.dropLast(n_suffix.count).last == .init(character: "x", inputStyle: .roman2kana) {
             return true
         }
         return false
@@ -510,7 +516,7 @@ extension ComposingText {
         if let lastElement = convertTargetElements.last, lastElement.inputStyle == .roman2kana, rightIndex < originalElements.endIndex {
             let nextFirstElement = originalElements[rightIndex]
 
-            if !lastElement.string.hasSuffix("n") && lastElement.string.last == nextFirstElement.character {
+            if !lastElement.string.hasSuffix("n") && lastElement.string.last == nextFirstElement.character && CharacterUtils.isRomanLetter(nextFirstElement.character) {
                 // 書き換える
                 convertTargetElements[convertTargetElements.endIndex - 1].string.removeLast()
                 convertTargetElements.append(ConvertTargetElement(string: ["っ"], inputStyle: .direct))

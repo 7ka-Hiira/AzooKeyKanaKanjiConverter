@@ -22,15 +22,12 @@ extension Kana2Kanji {
         debug("新規に計算を行います。inputされた文字列は\(inputData.input.count)文字分の\(inputData.convertTarget)。制約は\(constraint)")
         let count: Int = inputData.input.count
         let result: LatticeNode = LatticeNode.EOSNode
-        let nodes: [[LatticeNode]] = (.zero ..< count).map {dicdataStore.getFrozenLOUDSDataInRange(inputData: inputData, from: $0)}
+        let nodes: [[LatticeNode]] = (.zero ..< count).map {dicdataStore.getLOUDSDataInRange(inputData: inputData, from: $0, needTypoCorrection: false)}
         // 「i文字目から始まるnodes」に対して
         for (i, nodeArray) in nodes.enumerated() {
             // それぞれのnodeに対して
             for node in nodeArray {
                 if node.prevs.isEmpty {
-                    continue
-                }
-                if self.dicdataStore.shouldBeRemoved(data: node.data) {
                     continue
                 }
                 // 生起確率を取得する。
@@ -48,7 +45,8 @@ extension Kana2Kanji {
                 if nextIndex == count {
                     for index in node.prevs.indices {
                         let newnode: RegisteredNode = node.getRegisteredNode(index, value: node.values[index])
-                        if !node.data.metadata.contains(.isLearned) {
+                        // 学習データやユーザ辞書由来の場合は素通しする
+                        if node.data.metadata.isDisjoint(with: [.isLearned, .isFromUserDictionary]) {
                             let utf8Text = newnode.getCandidateData().data.reduce(into: []) { $0.append(contentsOf: $1.word.utf8)} + node.data.word.utf8
                             // 最終チェック
                             let condition = (!constraint.hasEOS && utf8Text.hasPrefix(constraint.constraint)) || (constraint.hasEOS && utf8Text == constraint.constraint)
@@ -64,10 +62,6 @@ extension Kana2Kanji {
                     }
                     // nodeの繋がる次にあり得る全てのnextnodeに対して
                     for nextnode in nodes[nextIndex] {
-                        // この関数はこの時点で呼び出して、後のnode.registered.isEmptyで最終的に弾くのが良い。
-                        if self.dicdataStore.shouldBeRemoved(data: nextnode.data) {
-                            continue
-                        }
                         // クラスの連続確率を計算する。
                         let ccValue: PValue = self.dicdataStore.getCCValue(node.data.rcid, nextnode.data.lcid)
                         // nodeの持っている全てのprevnodeに対して
@@ -77,8 +71,8 @@ extension Kana2Kanji {
                             // 制約 AB 単語 ABC (OK)
                             // 制約 AB 単語 A   (OK)
                             // 制約 AB 単語 AC  (NG)
-                            // ただし、学習データの場合は素通しする
-                            if !nextnode.data.metadata.contains(.isLearned) {
+                            // ただし、学習データやユーザ辞書由来の場合は素通しする
+                            if nextnode.data.metadata.isDisjoint(with: [.isLearned, .isFromUserDictionary]) {
                                 let utf8Text = candidates[index] + nextnode.data.word.utf8
                                 let condition = (!constraint.hasEOS && (utf8Text.hasPrefix(constraint.constraint) || constraint.constraint.hasPrefix(utf8Text))) || (constraint.hasEOS && utf8Text.count < constraint.constraint.count && constraint.constraint.hasPrefix(utf8Text))
                                 guard condition else {

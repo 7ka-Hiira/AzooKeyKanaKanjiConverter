@@ -87,6 +87,9 @@ public final class DicdataStore {
             self.closeKeyboard()
         case .importOSUserDict(let dicdata), .importDynamicUserDict(let dicdata):
             self.dynamicUserDict = dicdata
+            self.dynamicUserDict.mutatingForeach {
+                $0.metadata = .isFromUserDictionary
+            }
         case let .forgetMemory(candidate):
             self.learningManager.forgetMemory(data: candidate.data)
             // loudsの処理があるので、リセットを実施する
@@ -218,6 +221,11 @@ public final class DicdataStore {
                 $0.metadata = .isLearned
             }
         }
+        if identifier == "user" {
+            data.mutatingForeach {
+                $0.metadata = .isFromUserDictionary
+            }
+        }
         return data
     }
 
@@ -226,7 +234,10 @@ public final class DicdataStore {
     ///   - inputData: 入力データ
     ///   - from: 起点
     ///   - toIndexRange: `from ..< (toIndexRange)`の範囲で辞書ルックアップを行う。
-    public func getLOUDSDataInRange(inputData: ComposingText, from fromIndex: Int, toIndexRange: Range<Int>? = nil) -> [LatticeNode] {
+    public func getLOUDSDataInRange(inputData: ComposingText, from fromIndex: Int, toIndexRange: Range<Int>? = nil, needTypoCorrection: Bool = true) -> [LatticeNode] {
+        if !needTypoCorrection {
+            return self.getFrozenLOUDSDataInRange(inputData: inputData, from: fromIndex, toIndexRange: toIndexRange)
+        }
         let toIndexLeft = toIndexRange?.startIndex ?? fromIndex
         let toIndexRight = min(toIndexRange?.endIndex ?? inputData.input.count, fromIndex + self.maxlength)
         debug("getLOUDSDataInRange", fromIndex, toIndexRange?.description ?? "nil", toIndexLeft, toIndexRight)
@@ -302,7 +313,7 @@ public final class DicdataStore {
                 dicdata.append(contentsOf: result)
             }
             do {
-                let result = self.getMatchOSUserDict(segments[i - fromIndex])
+                let result = self.getMatchDynamicUserDict(segments[i - fromIndex])
                 for item in result {
                     stringToInfo[Array(item.ruby)] = (i, 0)
                 }
@@ -335,7 +346,7 @@ public final class DicdataStore {
     ///   - inputData: 入力データ
     ///   - from: 起点
     ///   - toIndexRange: `from ..< (toIndexRange)`の範囲で辞書ルックアップを行う。
-    public func getFrozenLOUDSDataInRange(inputData: ComposingText, from fromIndex: Int, toIndexRange: Range<Int>? = nil) -> [LatticeNode] {
+    private func getFrozenLOUDSDataInRange(inputData: ComposingText, from fromIndex: Int, toIndexRange: Range<Int>? = nil) -> [LatticeNode] {
         let toIndexLeft = toIndexRange?.startIndex ?? fromIndex
         let toIndexRight = min(toIndexRange?.endIndex ?? inputData.input.count, fromIndex + self.maxlength)
         debug("getLOUDSDataInRange", fromIndex, toIndexRange?.description ?? "nil", toIndexLeft, toIndexRight)
@@ -354,7 +365,7 @@ public final class DicdataStore {
         }
 
         // MARK: 誤り訂正なし
-        var stringToEndIndex = inputData.getRanges(fromIndex, rightIndexRange: toIndexLeft ..< toIndexRight)
+        let stringToEndIndex = inputData.getRanges(fromIndex, rightIndexRange: toIndexLeft ..< toIndexRight)
         // MARK: 検索対象を列挙していく。
         guard let (minString, maxString) = stringToEndIndex.keys.minAndMax(by: {$0.count < $1.count}) else {
             return [characterNode]
@@ -376,7 +387,9 @@ public final class DicdataStore {
         }
         for i in toIndexLeft ..< toIndexRight {
             dicdata.append(contentsOf: self.getWiseDicdata(convertTarget: segments[i - fromIndex], inputData: inputData, inputRange: fromIndex ..< i + 1))
-            dicdata.append(contentsOf: self.getMatchOSUserDict(segments[i - fromIndex]))
+        }
+        for item in stringToEndIndex {
+            dicdata.append(contentsOf: self.getMatchDynamicUserDict(String(item.key)))
         }
         if fromIndex == .zero {
             return dicdata.compactMap {
@@ -473,7 +486,7 @@ public final class DicdataStore {
         }
 
         dicdata.append(contentsOf: self.getWiseDicdata(convertTarget: segment, inputData: inputData, inputRange: fromIndex ..< toIndex + 1))
-        dicdata.append(contentsOf: self.getMatchOSUserDict(segment))
+        dicdata.append(contentsOf: self.getMatchDynamicUserDict(segment))
 
         if fromIndex == .zero {
             let result: [LatticeNode] = dicdata.map {
@@ -524,8 +537,9 @@ public final class DicdataStore {
             Int.max
         }
         let prefixIndices = self.prefixMatchLOUDS(query: first, charIDs: charIDs, depth: depth).prefix(700)
+
         result.append(
-            contentsOf: self.getDicdataFromLoudstxt3(identifier: first, indices: Set(consume prefixIndices))
+            contentsOf: self.getDicdataFromLoudstxt3(identifier: first, indices: Set(prefixIndices))
                 .filter { Self.predictionUsable[$0.rcid] }
         )
         let userDictIndices = self.prefixMatchLOUDS(query: "user", charIDs: charIDs, depth: depth).prefix(700)
@@ -694,13 +708,13 @@ public final class DicdataStore {
         }
     }
 
-    /// OSのユーザ辞書からrubyに等しい語を返す。
-    func getMatchOSUserDict(_ ruby: some StringProtocol) -> [DicdataElement] {
+    /// 動的ユーザ辞書からrubyに等しい語を返す。
+    func getMatchDynamicUserDict(_ ruby: some StringProtocol) -> [DicdataElement] {
         self.dynamicUserDict.filter {$0.ruby == ruby}
     }
 
-    /// OSのユーザ辞書からrubyに先頭一致する語を返す。
-    func getPrefixMatchOSUserDict(_ ruby: some StringProtocol) -> [DicdataElement] {
+    /// 動的ユーザ辞書からrubyに先頭一致する語を返す。
+    func getPrefixMatchDynamicUserDict(_ ruby: some StringProtocol) -> [DicdataElement] {
         self.dynamicUserDict.filter {$0.ruby.hasPrefix(ruby)}
     }
 

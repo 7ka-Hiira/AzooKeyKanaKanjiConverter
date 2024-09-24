@@ -25,8 +25,10 @@ extension Subcommands {
         var roman2kana = false
         @Option(name: [.customLong("config_zenzai_inference_limit")], help: "inference limit for zenzai.")
         var configZenzaiInferenceLimit: Int = .max
-        @Option(name: [.customLong("config_profile")], help: "enable profile prompting for zenz-v2.")
-        var configZenzV2Profile: String? = nil
+        @Flag(name: [.customLong("config_zenzai_rich_n_best")], help: "enable profile prompting for zenz-v2.")
+        var configRequestRichCandidates = false
+        @Option(name: [.customLong("config_profile")], help: "enable rich n_best generation for zenzai.")
+        var configZenzV2Profile: String?
         @Flag(name: [.customLong("zenz_v1")], help: "Use zenz_v1 model.")
         var zenzV1 = false
 
@@ -50,7 +52,7 @@ extension Subcommands {
             if self.zenzV1 {
                 print("\(bold: "We strongly recommend to use zenz-v2 models")")
             }
-            let memoryDirector = if self.enableLearning {
+            let memoryDirectory = if self.enableLearning {
                 if let dir = self.getTemporaryDirectory() {
                     dir
                 } else {
@@ -78,8 +80,12 @@ extension Subcommands {
                     // 終了
                     return
                 case ":d":
-                    // 削除
-                    composingText.deleteBackwardFromCursorPosition(count: 1)
+                    if !composingText.isEmpty {
+                        composingText.deleteBackwardFromCursorPosition(count: 1)
+                    } else {
+                        _ = leftSideContext.popLast()
+                        continue
+                    }
                 case ":c":
                     // クリア
                     composingText.stopComposition()
@@ -104,6 +110,17 @@ extension Subcommands {
                     converter.sendToDicdataStore(.closeKeyboard)
                     print("saved")
                     continue
+                case ":p":
+                    // 次の文字の予測を取得する
+                    let results = converter.predictNextCharacter(
+                        leftSideContext: leftSideContext,
+                        count: 10,
+                        options: requestOptions(memoryDirectory: memoryDirectory, leftSideContext: leftSideContext)
+                    )
+                    if let firstCandidate = results.first {
+                        leftSideContext.append(firstCandidate.character)
+                    }
+                    continue
                 case ":h":
                     // ヘルプ
                     print("""
@@ -113,6 +130,7 @@ extension Subcommands {
                     \(bold: ":d") - delete one character
                     \(bold: ":n") - see more candidates
                     \(bold: ":s") - save memory to temporary directory
+                    \(bold: ":p") - predict next one character
                     \(bold: ":%d") - select candidate at that index (like :3 to select 3rd candidate)
                     """)
                 default:
@@ -136,7 +154,7 @@ extension Subcommands {
                             [
                                 "-": "ー",
                                 ".": "。",
-                                ",": "、",
+                                ",": "、"
                             ][c, default: c]
                         })
                         composingText.insertAtCursorPosition(input, inputStyle: inputStyle)
@@ -144,7 +162,7 @@ extension Subcommands {
                 }
                 print(composingText.convertTarget)
                 let start = Date()
-                let result = converter.requestCandidates(composingText, options: requestOptions(memoryDirector: memoryDirector, leftSideContext: leftSideContext))
+                let result = converter.requestCandidates(composingText, options: requestOptions(memoryDirectory: memoryDirectory, leftSideContext: leftSideContext))
                 let mainResults = result.mainResults.filter {
                     !self.onlyWholeConversion || $0.data.reduce(into: "", {$0.append(contentsOf: $1.ruby)}) == input.toKatakana()
                 }
@@ -171,7 +189,7 @@ extension Subcommands {
             }
         }
 
-        func requestOptions(memoryDirector: URL, leftSideContext: String) -> ConvertRequestOptions {
+        func requestOptions(memoryDirectory: URL, leftSideContext: String) -> ConvertRequestOptions {
             let zenzaiVersionDependentMode: ConvertRequestOptions.ZenzaiVersionDependentMode = if self.zenzV1 {
                 .v1
             } else {
@@ -190,11 +208,12 @@ extension Subcommands {
                 learningType: enableLearning ? .inputAndOutput : .nothing,
                 maxMemoryCount: 0,
                 shouldResetMemory: false,
-                memoryDirectoryURL: memoryDirector,
+                memoryDirectoryURL: memoryDirectory,
                 sharedContainerURL: URL(fileURLWithPath: ""),
                 zenzaiMode: self.zenzWeightPath.isEmpty ? .off : .on(
                     weight: URL(string: self.zenzWeightPath)!,
                     inferenceLimit: self.configZenzaiInferenceLimit,
+                    requestRichCandidates: self.configRequestRichCandidates,
                     versionDependentMode: zenzaiVersionDependentMode
                 ),
                 metadata: .init(versionString: "anco for debugging")
