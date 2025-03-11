@@ -1,8 +1,13 @@
+#if canImport(llama)
 import llama
+#else
+import llama_mock
+#endif
 import SwiftUtils
 import HeapModule
 import Algorithms
 import Foundation
+import EfficientNGram
 
 struct FixedSizeHeap<Element: Comparable> {
     private var size: Int
@@ -63,7 +68,7 @@ enum ZenzError: LocalizedError {
     }
 }
 
-class ZenzContext {
+final class ZenzContext {
     private var model: OpaquePointer
     private var context: OpaquePointer
     private var prevInput: [llama_token] = []
@@ -161,9 +166,9 @@ class ZenzContext {
             // FIXME: there can be more efficient implementations, poossibly using Accelerate or other frameworks.
             var log_prob: Float = 0
             for index in ((i - 1) * Int(n_vocab)) ..< (i * Int(n_vocab)) {
-                log_prob += exp(logits[index])
+                log_prob += expf(logits[index])
             }
-            log_prob = log(log_prob)
+            log_prob = logf(log_prob)
             log_prob = logits[Int((i - 1) * Int(n_vocab) + Int(token_id))] - log_prob
             sum += log_prob
         }
@@ -192,6 +197,42 @@ class ZenzContext {
         } else {
             30
         }
+    }
+
+    /// ピュアな貪欲法による生成を行って返す
+    func pure_greedy_decoding(leftSideContext: String, maxCount: Int = .max) -> String {
+        var prompt_tokens = self.tokenize(text: leftSideContext, add_bos: false)
+        let initial_count = prompt_tokens.count
+        let eos_token = llama_token_eos(model)
+        while prompt_tokens.count - initial_count < maxCount {
+            let startOffset = prompt_tokens.count - 1
+            guard let logits = self.get_logits(tokens: prompt_tokens, logits_start_index: startOffset) else {
+                print("logits unavailable")
+                return ""
+            }
+            let n_vocab = llama_n_vocab(model)
+            let startIndex = (prompt_tokens.count - 1 - startOffset) * Int(n_vocab)
+            let endIndex = (prompt_tokens.count - startOffset) * Int(n_vocab)
+            // Min-Heapを使用してn-bestを計算
+            var max_token: llama_token = -1
+            var max_value: Float = Float.infinity * -1
+            for index in startIndex..<endIndex {
+                let token = llama_token(index - startIndex)
+                if max_value < logits[index] {
+                    max_token = token
+                    max_value = logits[index]
+                }
+            }
+            if max_token == eos_token {
+                break
+            } else {
+                prompt_tokens.append(max_token)
+            }
+        }
+
+        // Heapからソートして結果を取り出す
+        let cchars: [CChar] = prompt_tokens.dropFirst(initial_count).flatMap(self.token_to_piece) + [0]
+        return String(cString: cchars)
     }
 
     func predict_next_character(leftSideContext: String, count: Int) -> [(character: Character, value: Float)] {
@@ -229,7 +270,7 @@ class ZenzContext {
         for index in startIndex..<endIndex {
             let token = llama_token(index - startIndex)
             let repeat_penalty = Float(1.0 + token_to_penalty_weight[token, default: 0])
-            let v = exp(logits[index] / repeat_penalty)
+            let v = expf(logits[index] / repeat_penalty)
             exp_sum += v
 
             let tokenPieceData = Data((token_to_piece(token: token)).map(UInt8.init))
@@ -246,7 +287,13 @@ class ZenzContext {
         return minHeap.unordered.sorted { $0.value > $1.value }.map { ($0.character, $0.value / exp_sum) }
     }
 
-    func evaluate_candidate(input: String, candidate: Candidate, requestRichCandidates: Bool, versionDependentConfig: ConvertRequestOptions.ZenzaiVersionDependentMode) -> CandidateEvaluationResult {
+    func evaluate_candidate(
+        input: String,
+        candidate: Candidate,
+        requestRichCandidates: Bool,
+        personalizationMode: (mode: ConvertRequestOptions.ZenzaiMode.PersonalizationMode, base: EfficientNGram, personal: EfficientNGram)?,
+        versionDependentConfig: ConvertRequestOptions.ZenzaiVersionDependentMode
+    ) -> CandidateEvaluationResult {
         print("Evaluate", candidate)
         // For zenz-v1 model, \u{EE00} is a token used for 'start query', and \u{EE01} is a token used for 'start answer'
         // We assume \u{EE01}\(candidate) is always splitted into \u{EE01}_\(candidate) by zenz-v1 tokenizer
@@ -260,34 +307,80 @@ class ZenzContext {
             conditions.append("辞書:\(userDictionaryPrompt)")
         }
         // プロフィールがある場合はこれを条件に追加
-        if case .v2(let mode) = versionDependentConfig, let profile = mode.profile, !profile.isEmpty {
-            let pf = profile.suffix(25)
-            conditions.append("プロフィール:\(profile)")
+        switch versionDependentConfig {
+        case .v1: break
+        case .v2(let mode):
+            if let profile = mode.profile, !profile.isEmpty {
+                let pf = profile.suffix(25)
+                conditions.append("プロフィール:\(pf)")
+            }
+        case .v3(let mode):
+            if let profile = mode.profile, !profile.isEmpty {
+                let pf = profile.suffix(25)
+                conditions.append("\u{EE03}\(pf)")
+            }
+            if let topic = mode.topic, !topic.isEmpty {
+                let tp = topic.suffix(25)
+                conditions.append("\u{EE04}\(tp)")
+            }
+            if let style = mode.style, !style.isEmpty {
+                let st = style.suffix(25)
+                conditions.append("\u{EE05}\(st)")
+            }
+            if let preference = mode.preference, !preference.isEmpty {
+                let pr = preference.suffix(25)
+                conditions.append("\u{EE06}\(pr)")
+            }
         }
         // 左文脈を取得
-        // プロフィールがある場合はこれを条件に追加
-        let leftSideContext = if case .v2(let mode) = versionDependentConfig, let leftSideContext = mode.leftSideContext {
-            String(leftSideContext.suffix(40))
-        } else {
-            ""
+        let leftSideContext: String = switch versionDependentConfig {
+        case .v1: ""
+        case .v2(let mode):
+            if let leftSideContext = mode.leftSideContext {
+                String(leftSideContext.suffix(40))
+            } else {
+                ""
+            }
+        case .v3(let mode):
+            if let leftSideContext = mode.leftSideContext {
+                String(leftSideContext.suffix(40))
+            } else {
+                ""
+            }
         }
         let inputTag = "\u{EE00}"
         let outputTag = "\u{EE01}"
         let contextTag = "\u{EE02}"
         // プロンプトを作成
-        let prompt: String = if !conditions.isEmpty {
-            // 条件がemptyでない場合は「・」でつなぎ、「発言:」を末尾に追加
-            inputTag + input + contextTag + conditions.joined(separator: "・") + "・発言:\(leftSideContext)" + outputTag
-        } else if !leftSideContext.isEmpty {
-            // 条件がemptyの場合、単にleftSideContextを追加
-            inputTag + input + contextTag + leftSideContext + outputTag
-        } else {
-            // そのまま
+        var prompt: String = switch versionDependentConfig {
+        case .v1:
             inputTag + input + outputTag
+        case .v2:
+            if !conditions.isEmpty {
+                // 条件がemptyでない場合は「・」でつなぎ、「発言:」を末尾に追加
+                inputTag + input + contextTag + conditions.joined(separator: "・") + "・発言:\(leftSideContext)" + outputTag
+            } else if !leftSideContext.isEmpty {
+                // 条件がemptyの場合、単にleftSideContextを追加
+                inputTag + input + contextTag + leftSideContext + outputTag
+            } else {
+                // そのまま
+                inputTag + input + outputTag
+            }
+        case .v3:
+            if !leftSideContext.isEmpty {
+                // leftSideContextがEmptyでなければ下記の通り処理
+                // contextがinputに前置されるように変更された(KV-cachingの効率化のため)
+                conditions.joined(separator: "") + contextTag + leftSideContext + inputTag + input + outputTag
+            } else {
+                // そのまま
+                conditions.joined(separator: "") + inputTag + input + outputTag
+            }
         }
+        // プロンプトの前処理を適用
+        prompt = self.preprocessText(text: prompt)
         // Therefore, tokens = prompt_tokens + candidate_tokens is an appropriate operation.
         let prompt_tokens = self.tokenize(text: prompt, add_bos: true, add_eos: false)
-        let candidate_tokens = self.tokenize(text: candidate.text, add_bos: false, add_eos: false)
+        let candidate_tokens = self.tokenize(text: self.preprocessText(text: candidate.text), add_bos: false, add_eos: false)
         let tokens = prompt_tokens + candidate_tokens
         let startOffset = prompt_tokens.count - 1
         let pos_max = llama_kv_cache_seq_pos_max(self.context, 0)
@@ -299,7 +392,7 @@ class ZenzContext {
         let n_vocab = llama_n_vocab(model)
         let is_learned_token: [(isLearned: Bool, priority: Float)] = Array(repeating: (false, 0), count: prompt_tokens.count) + candidate.data.flatMap {
             // priorityは文字数にする→文字数が長いほど優先される
-            Array(repeating: ($0.metadata.contains(.isLearned), getLearningPriority(data: $0)), count: self.tokenize(text: $0.word, add_bos: false).count)
+            Array(repeating: ($0.metadata.contains(.isLearned), logf(getLearningPriority(data: $0))), count: self.tokenize(text: $0.word, add_bos: false).count)
         }
 
         var score: Float = 0
@@ -320,23 +413,49 @@ class ZenzContext {
             // それぞれのトークンが、一つ前の予測において最も確率の高いトークンであるかをチェックする
             // softmaxはmaxなので、単にlogitsの中で最も大きいものを選べば良い
             // 一方実用的にはlog_probも得ておきたい。このため、ここでは明示的にsoftmaxも計算している
-            struct TokenAndExpLogit: Comparable {
-                static func < (lhs: TokenAndExpLogit, rhs: TokenAndExpLogit) -> Bool {
-                    lhs.expLogit < rhs.expLogit
+            struct TokenAndLogprob: Comparable {
+                static func < (lhs: TokenAndLogprob, rhs: TokenAndLogprob) -> Bool {
+                    lhs.logprob < rhs.logprob
                 }
-
                 var token: llama_token
-                var expLogit: Float
+                var logprob: Float
             }
-            var exp_sum: Float = 0
+            var sumexp: Float = 0
             let startIndex = (i - 1 - startOffset) * Int(n_vocab)
             let endIndex = (i - startOffset) * Int(n_vocab)
-            var tokenHeap = FixedSizeHeap<TokenAndExpLogit>(size: requestRichCandidates ? 3 : 1)
+            var tokenHeap = FixedSizeHeap<TokenAndLogprob>(size: requestRichCandidates ? 3 : 1)
             for index in startIndex ..< endIndex {
-                let v = exp(logits[index])
-                exp_sum += v
-                tokenHeap.insertIfPossible(TokenAndExpLogit(token: llama_token(index - startIndex), expLogit: v))
+                sumexp += expf(logits[index])
             }
+            let logsumexp = logf(sumexp)
+
+            if let (mode, baseLM, personalLM) = personalizationMode, mode.alpha > 0 {
+                let prefix = tokens[..<i].dropFirst(prompt_tokens.count).map(Int.init)
+                let baseProb: [Float]
+                let personalProb: [Float]
+                // SwiftNgramのLMは無条件の場合エラーになるため(Unigram確率はサポートしていない)
+                if !prefix.isEmpty {
+                    baseProb = baseLM.bulkPredict(prefix).map { logf(Float($0) + 1e-7) }
+                    personalProb = personalLM.bulkPredict(prefix).map { logf(Float($0) + 1e-7) }
+                } else {
+                    baseProb = Array(repeating: 0, count: Int(n_vocab))
+                    personalProb = baseProb
+                }
+                // p = probabilityBuffer / exp_sum
+                // p' = p / p_b * p_p
+                for (i, (lpb, lpp)) in zip(0 ..< Int(n_vocab), zip(baseProb, personalProb)) {
+                    let logp = logits[startIndex + i] - logsumexp
+                    let logp_ = logp + mode.alpha * (lpp - lpb) // personalized probability
+                    tokenHeap.insertIfPossible(TokenAndLogprob(token: llama_token(i), logprob: logp_))
+                }
+            } else {
+                // p = probabilityBuffer / exp_sum
+                for i in startIndex ..< endIndex {
+                    let logp = logits[i] - logsumexp
+                    tokenHeap.insertIfPossible(TokenAndLogprob(token: llama_token(i - startIndex), logprob: logp))
+                }
+            }
+
             guard let maxItem = tokenHeap.max else {
                 print("Max Item could not be found for unknown reason")
                 return .error
@@ -354,9 +473,9 @@ class ZenzContext {
                     let wholeResult = String(string.dropFirst(prompt.count))
                     return .wholeResult(wholeResult)
                 } else {
-                    let actual_exp: Float = exp(logits[startIndex + Int(token_id)])
+                    let actual_logp: Float = logits[startIndex + Int(token_id)] - logsumexp
                     // 学習されたトークンであり、なおかつactual_expのある程度大きければ、学習されたトークンを優先する
-                    let preferLearnedToken = is_learned_token[i].isLearned && actual_exp * is_learned_token[i].priority > maxItem.expLogit
+                    let preferLearnedToken = is_learned_token[i].isLearned && actual_logp + is_learned_token[i].priority > maxItem.logprob
                     if !preferLearnedToken {
                         // adding "\0"
                         let cchars = tokens[..<i].reduce(into: []) {
@@ -376,12 +495,12 @@ class ZenzContext {
                         AlternativeHighProbToken(
                             token: item.token,
                             constraint: prefix.map(UInt8.init) + token_to_piece(token: item.token).map(UInt8.init),
-                            probabilityRatioToMaxProb: item.expLogit / maxItem.expLogit
+                            probabilityRatioToMaxProb: expf(item.logprob - maxItem.logprob)
                         )
                     )
                 }
             }
-            score += log(maxItem.expLogit) - log(exp_sum)
+            score += maxItem.logprob
         }
         return .pass(score: score, alternativeConstraints: altTokens.unordered.sorted(by: >).map {.init(probabilityRatio: $0.probabilityRatioToMaxProb, prefixConstraint: $0.constraint)})
     }
@@ -397,10 +516,12 @@ class ZenzContext {
         batch.n_tokens += 1
     }
 
-    private func tokenize(text: String, add_bos: Bool, add_eos: Bool = false) -> [llama_token] {
+    private func preprocessText(text: String) -> String {
         // replace space into ideographic space (\u3000) for zenz tokenizer
         // replace newline into null for zenz tokenizer
-        let text = text.replacingOccurrences(of: " ", with: "\u{3000}").replacingOccurrences(of: "\n", with: "")
+        return text.replacingOccurrences(of: " ", with: "\u{3000}").replacingOccurrences(of: "\n", with: "")
+    }
+    private func tokenize(text: String, add_bos: Bool, add_eos: Bool = false) -> [llama_token] {
         let utf8Count = text.utf8.count
         let n_tokens = utf8Count + (add_bos ? 1 : 0)
         let tokens = UnsafeMutablePointer<llama_token>.allocate(capacity: n_tokens)

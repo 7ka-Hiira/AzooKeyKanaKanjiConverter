@@ -18,7 +18,8 @@ public extension ConvertRequestOptions {
         memoryDirectoryURL: URL,
         sharedContainerURL: URL,
         zenzaiMode: ZenzaiMode = .off,
-        textReplacer: TextReplacer = TextReplacer(),
+        textReplacer: TextReplacer = .withDefaultEmojiDictionary(),
+        preloadDictionary: Bool = false,
         metadata: ConvertRequestOptions.Metadata?
     ) -> Self {
         #if os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
@@ -46,7 +47,40 @@ public extension ConvertRequestOptions {
             sharedContainerURL: sharedContainerURL,
             textReplacer: textReplacer,
             zenzaiMode: zenzaiMode,
+            preloadDictionary: preloadDictionary,
             metadata: metadata
         )
+    }
+}
+
+
+public extension TextReplacer {
+    static func withDefaultEmojiDictionary() -> Self {
+        self.init {
+            let directoryName = "EmojiDictionary"
+            #if os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
+            let directory = Bundle.module.bundleURL.appendingPathComponent(directoryName, isDirectory: true)
+            return if #available(iOS 17.4, *) {
+                directory.appendingPathComponent("emoji_all_E15.1.txt", isDirectory: false)
+            } else if #available(iOS 16.4, *) {
+                directory.appendingPathComponent("emoji_all_E15.0.txt", isDirectory: false)
+            } else if #available(iOS 15.4, *) {
+                directory.appendingPathComponent("emoji_all_E14.0.txt", isDirectory: false)
+            } else {
+                directory.appendingPathComponent("emoji_all_E13.1.txt", isDirectory: false)
+            }
+            #elseif os(macOS)
+            let directory = Bundle.module.resourceURL!.appendingPathComponent(directoryName, isDirectory: true)
+            return if #available(macOS 14.4, *) {
+                directory.appendingPathComponent("emoji_all_E15.1.txt", isDirectory: false)
+            } else {
+                directory.appendingPathComponent("emoji_all_E15.0.txt", isDirectory: false)
+            }
+            #else
+            return Bundle.module.resourceURL!
+                .appendingPathComponent(directoryName, isDirectory: true)
+                .appendingPathComponent("emoji_all_E15.1.txt", isDirectory: false)
+            #endif
+        }
     }
 }

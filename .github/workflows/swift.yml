@@ -4,9 +4,7 @@
 name: Swift Build and Test
 on:
   push:
-    branches: [ "main", "develop" ]
   pull_request:
-    branches: [ "main", "develop" ]
 
 jobs:
   macos-build:
@@ -15,26 +13,26 @@ jobs:
     strategy:
       matrix:
         os: [macos-latest]
-        swift-version: ["5.9", "5.10"]
+        swift-version: ["6.0"]
     steps:
-    - uses: swift-actions/setup-swift@v2
-      with:
-        swift-version: ${{ matrix.swift-version }}
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Build
-      run: swift build -Xswiftc -strict-concurrency=complete -Xcxx -xobjective-c++ -v
-    - name: Run tests
-      run: swift test -c release -Xswiftc -strict-concurrency=complete -Xcxx -xobjective-c++ -v
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ matrix.swift-version }}
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Build
+        run: swift build -Xswiftc -strict-concurrency=complete -Xcxx -xobjective-c++ -v
+      - name: Run tests
+        run: swift test -c release -Xswiftc -strict-concurrency=complete -Xcxx -xobjective-c++ -v
   ubuntu-build:
-      name: Swift ${{ matrix.swift-version }} on ${{ matrix.os }}
-      runs-on: ${{ matrix.os }}
-      strategy:
-        matrix:
-          os: [ubuntu-latest]
-          swift-version: ["5.9", "5.10"]
-      steps:
+    name: Swift ${{ matrix.swift-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        swift-version: ["6.0"]
+    steps:
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: ${{ matrix.swift-version }}
@@ -46,19 +44,21 @@ jobs:
       - name: Run tests
         run: swift test -c release -Xswiftc -strict-concurrency=complete -v
   windows-build:
-      name: Swift ${{ matrix.swift-version }} on ${{ matrix.os }}
-      runs-on: ${{ matrix.os }}
-      strategy:
-        matrix:
-          os: [windows-latest]
-          swift-version: ["20240802.2"]
-      steps:
+    name: Swift ${{ matrix.swift-version.tag }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest]
+        swift-version:
+          [{
+            branch: "swift-6.0.2-release",
+            tag: "6.0.2-RELEASE"
+          }]
+    steps:
       - uses: compnerd/gha-setup-swift@main
         with:
-          release-tag-name: ${{ matrix.swift-version }}
-          github-repo: thebrowsercompany/swift-build
-          release-asset-name: installer-amd64.exe
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ matrix.swift-version.branch }}
+          tag: ${{ matrix.swift-version.tag }}
       - uses: actions/checkout@v4
         with:
           submodules: true
@@ -78,4 +78,88 @@ jobs:
         run: swift build -Xswiftc -strict-concurrency=complete -v
       - name: Run tests
         run: swift test -c release -Xswiftc -strict-concurrency=complete -v
-  
+  android-build:
+    # from: finagolfin/swift-android-sdk
+    name: Swift on android
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64, armv7]
+        os: [ubuntu-latest]
+        swift-version:
+          [{
+            version: "6.0.2",
+            android: "24",
+            checksum: "d75615eac3e614131133c7cc2076b0b8fb4327d89dce802c25cd53e75e1881f4"
+          }]
+
+    steps:
+      - name: Setup Swift toolchain
+        run: |
+          curl -sL https://download.swift.org/swift-${{ matrix.swift-version.version }}-release/ubuntu2204/swift-${{ matrix.swift-version.version }}-RELEASE/swift-${{ matrix.swift-version.version }}-RELEASE-ubuntu22.04.tar.gz -o swift-toolchain.tar.gz
+          tar xf swift-toolchain.tar.gz
+          TOOLCHAIN=${PWD}/swift-${{ matrix.swift-version.version }}-RELEASE-ubuntu22.04/usr
+          echo "TOOLCHAIN=${TOOLCHAIN}" >> $GITHUB_ENV
+          ${TOOLCHAIN}/bin/swift --version
+
+      - name: Setup Swift release Android SDK
+        run: ${TOOLCHAIN}/bin/swift sdk install https://github.com/finagolfin/swift-android-sdk/releases/download/${{ matrix.swift-version.version }}/swift-${{ matrix.swift-version.version }}-RELEASE-android-${{ matrix.swift-version.android }}-0.1.artifactbundle.tar.gz --checksum ${{ matrix.swift-version.checksum }}
+      - uses: actions/checkout@v4
+        with:
+          path: AzooKeyKanaKanjiConverter
+          submodules: true
+      - name: Build
+        run: |
+          cd AzooKeyKanaKanjiConverter
+          ARCH_TARGET="${{ matrix.arch }}-unknown-linux-android${{ matrix.swift-version.android }}"
+          if ${{ matrix.arch == 'armv7' }}; then
+              ARCH_TARGET="armv7-unknown-linux-androideabi${{ matrix.swift-version.android }}"
+          fi
+          LLAMA_MOCK=1 ${TOOLCHAIN}/bin/swift build --build-tests --swift-sdk $ARCH_TARGET
+      - name: Get cached Termux app
+        if: ${{ matrix.arch == 'x86_64' }}
+        id: cache-termux
+        uses: actions/cache@v4
+        with:
+          path: ~/termux-debug.apk
+          key: termux-app
+      - name: Get Termux debug app if not cached
+        if: ${{ (matrix.arch == 'x86_64') && (steps.cache-termux.outputs.cache-hit != 'true') }}
+        run: wget -O ~/termux-debug.apk https://github.com/termux/termux-app/releases/download/v0.118.0/termux-app_v0.118.0+github-debug_x86_64.apk
+      - name: Prepare Android emulator
+        if: ${{ matrix.arch == 'x86_64' }}
+        run: |
+          set -x
+          # create the test runner script
+          cat > ~/test-toolchain.sh << EOF
+          adb install ~/termux-debug.apk
+          adb push pack /data/local/tmp
+          EOF
+
+          mkdir -p pack/lib/swift/android
+          TARGET="x86_64-unknown-linux-android${{ matrix.swift-version.android }}"
+
+          cp AzooKeyKanaKanjiConverter/.build/$TARGET/debug/AzooKeyKanakanjiConverterPackageTests.xctest pack
+          echo 'adb shell /data/local/tmp/pack/AzooKeyKanakanjiConverterPackageTests.xctest' >> ~/test-toolchain.sh
+
+          cp -r AzooKeyKanaKanjiConverter/.build/$TARGET/debug/AzooKeyKanakanjiConverter_KanaKanjiConverterModuleTests.resources pack
+          cp -r AzooKeyKanaKanjiConverter/.build/$TARGET/debug/AzooKeyKanakanjiConverter_KanaKanjiConverterModuleWithDefaultDictionary.resources pack
+          cp ~/.config/swiftpm/swift-sdks/swift-${{ matrix.swift-version.version }}-RELEASE-android-${{ matrix.swift-version.android }}-*.artifactbundle/swift*sdk/android*sysroot/usr/lib/$(echo ${{ matrix.arch }} | sed "s/v7//")-linux-android*/${{ matrix.swift-version.android }}/lib*so pack
+          rm pack/lib{c,dl,log,m}.so
+
+          chmod +x ~/test-toolchain.sh
+
+          echo "TEST SCRIPT:"
+          cat ~/test-toolchain.sh
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run tests
+        if: ${{ matrix.arch == 'x86_64' }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          script: ~/test-toolchain.sh

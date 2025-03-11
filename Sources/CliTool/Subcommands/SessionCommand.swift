@@ -25,14 +25,29 @@ extension Subcommands {
         var roman2kana = false
         @Option(name: [.customLong("config_zenzai_inference_limit")], help: "inference limit for zenzai.")
         var configZenzaiInferenceLimit: Int = .max
-        @Flag(name: [.customLong("config_zenzai_rich_n_best")], help: "enable profile prompting for zenz-v2.")
+        @Flag(name: [.customLong("config_zenzai_rich_n_best")], help: "enable rich n_best generation for zenzai.")
         var configRequestRichCandidates = false
-        @Option(name: [.customLong("config_profile")], help: "enable rich n_best generation for zenzai.")
-        var configZenzV2Profile: String?
+        @Option(name: [.customLong("config_profile")], help: "enable profile prompting for zenz-v2 and later.")
+        var configZenzaiProfile: String?
+        @Option(name: [.customLong("config_topic")], help: "enable topic prompting for zenz-v3 and later.")
+        var configZenzaiTopic: String?
         @Flag(name: [.customLong("zenz_v1")], help: "Use zenz_v1 model.")
         var zenzV1 = false
+        @Flag(name: [.customLong("zenz_v2")], help: "Use zenz_v2 model.")
+        var zenzV2 = false
+        @Flag(name: [.customLong("zenz_v3")], help: "Use zenz_v3 model.")
+        var zenzV3 = false
+        @Option(name: [.customLong("config_zenzai_base_lm")], help: "Marisa files for Base LM.")
+        var configZenzaiBaseLM: String?
+        @Option(name: [.customLong("config_zenzai_personal_lm")], help: "Marisa files for Personal LM.")
+        var configZenzaiPersonalLM: String?
+        @Option(name: [.customLong("config_zenzai_personalization_alpha")], help: "Strength of personalization (0.5 by default)")
+        var configZenzaiPersonalizationAlpha: Float = 0.5
 
-        static var configuration = CommandConfiguration(commandName: "session", abstract: "Start session for incremental input.")
+        @Option(name: [.customLong("replay")], help: "history.txt for replay.")
+        var replayHistory: String?
+
+        static let configuration = CommandConfiguration(commandName: "session", abstract: "Start session for incremental input.")
 
         private func getTemporaryDirectory() -> URL? {
             let fileManager = FileManager.default
@@ -49,8 +64,14 @@ extension Subcommands {
         }
 
         @MainActor mutating func run() async {
-            if self.zenzV1 {
-                print("\(bold: "We strongly recommend to use zenz-v2 models")")
+            if self.zenzV1 || self.zenzV2 {
+                print("\(bold: "We strongly recommend to use zenz-v3 models")")
+            }
+            if (self.zenzV1 || self.zenzV2 || self.zenzV3) && self.zenzWeightPath.isEmpty {
+                preconditionFailure("\(bold: "zenz version is specified but --zenz weight is not specified")")
+            }
+            if !self.zenzWeightPath.isEmpty && (!self.zenzV1 && !self.zenzV2 && !self.zenzV3) {
+                print("zenz version is not specified. By default, zenz-v3 will be used.")
             }
             let memoryDirectory = if self.enableLearning {
                 if let dir = self.getTemporaryDirectory() {
@@ -68,32 +89,45 @@ extension Subcommands {
             var lastCandidates: [Candidate] = []
             var leftSideContext: String = ""
             var page = 0
+
+            var histories = [String]()
+
+            var inputs = self.replayHistory.map {
+                try! String(contentsOfFile: $0, encoding: .utf8)
+            }?.split(by: "\n")
+            inputs?.append(":q")
+
             while true {
                 print()
                 print("\(bold: "== Type :q to end session, type :d to delete character, type :c to stop composition. For other commands, type :h ==")")
                 if !leftSideContext.isEmpty {
                     print("\(bold: "Current Left-Side Context"): \(leftSideContext)")
                 }
-                var input = readLine(strippingNewline: true) ?? ""
+                var input = if inputs != nil {
+                    inputs!.removeFirst()
+                } else {
+                    readLine(strippingNewline: true) ?? ""
+                }
+                histories.append(input)
                 switch input {
-                case ":q":
+                case ":q", ":quit":
                     // 終了
                     return
-                case ":d":
+                case ":d", ":del":
                     if !composingText.isEmpty {
                         composingText.deleteBackwardFromCursorPosition(count: 1)
                     } else {
                         _ = leftSideContext.popLast()
                         continue
                     }
-                case ":c":
+                case ":c", ":clear":
                     // クリア
                     composingText.stopComposition()
                     converter.stopComposition()
                     leftSideContext = ""
                     print("composition is stopped")
                     continue
-                case ":n":
+                case ":n", ":next":
                     // ページ送り
                     page += 1
                     for (i, candidate) in lastCandidates[self.displayTopN * page ..< self.displayTopN * (page + 1)].indexed() {
@@ -104,13 +138,13 @@ extension Subcommands {
                         }
                     }
                     continue
-                case ":s":
+                case ":s", ":save":
                     composingText.stopComposition()
                     converter.stopComposition()
                     converter.sendToDicdataStore(.closeKeyboard)
                     print("saved")
                     continue
-                case ":p":
+                case ":p", ":pred":
                     // 次の文字の予測を取得する
                     let results = converter.predictNextCharacter(
                         leftSideContext: leftSideContext,
@@ -121,20 +155,36 @@ extension Subcommands {
                         leftSideContext.append(firstCandidate.character)
                     }
                     continue
-                case ":h":
+                case ":h", ":help":
                     // ヘルプ
                     print("""
                     \(bold: "== anco session commands ==")
-                    \(bold: ":q") - quit session
-                    \(bold: ":c") - clear composition
-                    \(bold: ":d") - delete one character
-                    \(bold: ":n") - see more candidates
-                    \(bold: ":s") - save memory to temporary directory
-                    \(bold: ":p") - predict next one character
+                    \(bold: ":q, :quit") - quit session
+                    \(bold: ":c, :clear") - clear composition
+                    \(bold: ":d, :del") - delete one character
+                    \(bold: ":n, :next") - see more candidates
+                    \(bold: ":s, :save") - save memory to temporary directory
+                    \(bold: ":p, :pred") - predict next one character
                     \(bold: ":%d") - select candidate at that index (like :3 to select 3rd candidate)
+                    \(bold: ":ctx %s") - set the string as context
+                    \(bold: ":dump %s") - dump command history to specified file name (default: history.txt).
                     """)
                 default:
-                    if input.hasPrefix(":"), let index = Int(input.dropFirst()) {
+                    if input.hasPrefix(":ctx") {
+                        let ctx = String(input.split(by: ":ctx ").last ?? "")
+                        leftSideContext.append(ctx)
+                        continue
+                    } else if input.hasPrefix(":dump") {
+                        let fileName = if ":dump " < input {
+                            String(input.dropFirst(6))
+                        } else {
+                            "history.txt"
+                        }
+                        histories.removeAll(where: {$0.hasPrefix(":dump")})
+                        let content = histories.joined(separator: "\n")
+                        try! content.write(to: URL(fileURLWithPath: fileName), atomically: true, encoding: .utf8)
+                        continue
+                    } else if input.hasPrefix(":"), let index = Int(input.dropFirst()) {
                         if !lastCandidates.indices.contains(index) {
                             print("\(bold: "Error"): Index \(index) is not available for current context.")
                             continue
@@ -192,8 +242,24 @@ extension Subcommands {
         func requestOptions(memoryDirectory: URL, leftSideContext: String) -> ConvertRequestOptions {
             let zenzaiVersionDependentMode: ConvertRequestOptions.ZenzaiVersionDependentMode = if self.zenzV1 {
                 .v1
+            } else if self.zenzV2 {
+                .v2(.init(profile: self.configZenzaiProfile, leftSideContext: leftSideContext))
             } else {
-                .v2(.init(profile: self.configZenzV2Profile, leftSideContext: leftSideContext))
+                .v3(.init(profile: self.configZenzaiProfile, topic: self.configZenzaiTopic, leftSideContext: leftSideContext))
+            }
+            let personalizationMode: ConvertRequestOptions.ZenzaiMode.PersonalizationMode?
+            if let base = self.configZenzaiBaseLM, let personal = self.configZenzaiPersonalLM {
+                personalizationMode = .init(
+                    baseNgramLanguageModel: base,
+                    personalNgramLanguageModel: personal,
+                    n: 5,
+                    d: 0.75,
+                    alpha: self.configZenzaiPersonalizationAlpha
+                )
+            } else if self.configZenzaiBaseLM != nil || self.configZenzaiPersonalLM != nil {
+                fatalError("Both --config_zenzai_base_lm and --config_zenzai_personal_lm must be set")
+            } else {
+                personalizationMode = nil
             }
             var option: ConvertRequestOptions = .withDefaultDictionary(
                 N_best: self.onlyWholeConversion ? max(self.configNBest, self.displayTopN) : self.configNBest,
@@ -214,6 +280,7 @@ extension Subcommands {
                     weight: URL(string: self.zenzWeightPath)!,
                     inferenceLimit: self.configZenzaiInferenceLimit,
                     requestRichCandidates: self.configRequestRichCandidates,
+                    personalizationMode: personalizationMode,
                     versionDependentMode: zenzaiVersionDependentMode
                 ),
                 metadata: .init(versionString: "anco for debugging")
@@ -225,3 +292,4 @@ extension Subcommands {
         }
     }
 }
+

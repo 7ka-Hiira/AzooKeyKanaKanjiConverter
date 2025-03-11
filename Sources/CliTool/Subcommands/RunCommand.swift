@@ -15,6 +15,12 @@ extension Subcommands {
         var zenzWeightPath: String = ""
         @Option(name: [.customLong("config_zenzai_inference_limit")], help: "inference limit for zenzai.")
         var configZenzaiInferenceLimit: Int = .max
+        @Option(name: [.customLong("config_zenzai_base_lm")], help: "Marisa files for Base LM.")
+        var configZenzaiBaseLM: String?
+        @Option(name: [.customLong("config_zenzai_personal_lm")], help: "Marisa files for Personal LM.")
+        var configZenzaiPersonalLM: String?
+        @Option(name: [.customLong("config_zenzai_personalization_alpha")], help: "Strength of personalization (0.5 by default)")
+        var configZenzaiPersonalizationAlpha: Float = 0.5
 
         @Flag(name: [.customLong("disable_prediction")], help: "Disable producing prediction candidates.")
         var disablePrediction = false
@@ -25,7 +31,7 @@ extension Subcommands {
         @Flag(name: [.customLong("report_score")], help: "Show internal score for the candidate.")
         var reportScore = false
 
-        static var configuration = CommandConfiguration(commandName: "run", abstract: "Show help for this utility.")
+        static let configuration = CommandConfiguration(commandName: "run", abstract: "Show help for this utility.")
 
         @MainActor mutating func run() async {
             let converter = KanaKanjiConverter()
@@ -55,6 +61,20 @@ extension Subcommands {
         }
 
         func requestOptions() -> ConvertRequestOptions {
+            let personalizationMode: ConvertRequestOptions.ZenzaiMode.PersonalizationMode?
+            if let base = self.configZenzaiBaseLM, let personal = self.configZenzaiPersonalLM {
+                personalizationMode = .init(
+                    baseNgramLanguageModel: base,
+                    personalNgramLanguageModel: personal,
+                    n: 5,
+                    d: 0.75,
+                    alpha: self.configZenzaiPersonalizationAlpha
+                )
+            } else if self.configZenzaiBaseLM != nil || self.configZenzaiPersonalLM != nil {
+                fatalError("Both --config_zenzai_base_lm and --config_zenzai_personal_lm must be set")
+            } else {
+                personalizationMode = nil
+            }
             var option: ConvertRequestOptions = .withDefaultDictionary(
                 N_best: self.onlyWholeConversion ? max(self.configNBest, self.displayTopN) : self.configNBest,
                 requireJapanesePrediction: !self.onlyWholeConversion && !self.disablePrediction,
@@ -70,7 +90,7 @@ extension Subcommands {
                 shouldResetMemory: false,
                 memoryDirectoryURL: URL(fileURLWithPath: ""),
                 sharedContainerURL: URL(fileURLWithPath: ""),
-                zenzaiMode: self.zenzWeightPath.isEmpty ? .off : .on(weight: URL(string: self.zenzWeightPath)!, inferenceLimit: self.configZenzaiInferenceLimit),
+                zenzaiMode: self.zenzWeightPath.isEmpty ? .off : .on(weight: URL(string: self.zenzWeightPath)!, inferenceLimit: self.configZenzaiInferenceLimit, personalizationMode: personalizationMode),
                 metadata: .init(versionString: "anco for debugging")
             )
             if self.onlyWholeConversion {

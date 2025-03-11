@@ -12,7 +12,7 @@ extension Subcommands {
         @Option(name: [.customLong("zenz")], help: "gguf format model weight for zenz.")
         var zenzWeightPath: String = ""
 
-        static var configuration = CommandConfiguration(commandName: "experimental_predict", abstract: "Show help for this utility.")
+        static let configuration = CommandConfiguration(commandName: "experimental_predict", abstract: "Show help for this utility.")
 
         @MainActor mutating func run() async {
             let converter = KanaKanjiConverter()
@@ -38,7 +38,7 @@ extension Subcommands {
                 shouldResetMemory: false,
                 memoryDirectoryURL: URL(fileURLWithPath: ""),
                 sharedContainerURL: URL(fileURLWithPath: ""),
-                zenzaiMode: self.zenzWeightPath.isEmpty ? .off : .on(weight: URL(string: self.zenzWeightPath)!, inferenceLimit: .max, versionDependentMode: .v2(.init())),
+                zenzaiMode: self.zenzWeightPath.isEmpty ? .off : .on(weight: URL(string: self.zenzWeightPath)!, inferenceLimit: .max, personalizationMode: nil, versionDependentMode: .v3(.init())),
                 metadata: .init(versionString: "anco for debugging")
             )
         }

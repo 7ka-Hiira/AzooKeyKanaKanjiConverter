@@ -8,6 +8,7 @@
 
 import Foundation
 import SwiftUtils
+import EfficientNGram
 
 /// かな漢字変換の管理を受け持つクラス
 @MainActor public final class KanaKanjiConverter {
@@ -25,14 +26,16 @@ import SwiftUtils
     private var nodes: [[LatticeNode]] = []
     private var completedData: Candidate?
     private var lastData: DicdataElement?
-    /// Zenzaiのためのzenz-v1モデル
+    /// Zenzaiのためのzenzモデル
     private var zenz: Zenz? = nil
     private var zenzaiCache: Kana2Kanji.ZenzaiCache? = nil
+    private var zenzaiPersonalization: (mode: ConvertRequestOptions.ZenzaiMode.PersonalizationMode, base: EfficientNGram, personal: EfficientNGram)?
     public private(set) var zenzStatus: String = ""
 
     /// リセットする関数
     public func stopComposition() {
         self.zenz?.endSession()
+        self.zenzaiPersonalization = nil
         self.zenzaiCache = nil
         self.previousInputData = nil
         self.nodes = []
@@ -40,7 +43,21 @@ import SwiftUtils
         self.lastData = nil
     }
 
-    private func getModel(modelURL: URL, gpuLayers: Int32) -> Zenz? {
+    private func getZenzaiPersonalization(mode: ConvertRequestOptions.ZenzaiMode.PersonalizationMode?) -> (mode: ConvertRequestOptions.ZenzaiMode.PersonalizationMode, base: EfficientNGram, personal: EfficientNGram)? {
+        guard let mode else {
+            return nil
+        }
+        if let zenzaiPersonalization, zenzaiPersonalization.mode == mode {
+            return zenzaiPersonalization
+        }
+        let tokenizer = ZenzTokenizer()
+        let baseModel = EfficientNGram(baseFilename: mode.baseNgramLanguageModel, n: mode.n, d: mode.d, tokenizer: tokenizer)
+        let personalModel = EfficientNGram(baseFilename: mode.personalNgramLanguageModel, n: mode.n, d: mode.d, tokenizer: tokenizer)
+        self.zenzaiPersonalization = (mode, baseModel, personalModel)
+        return (mode, baseModel, personalModel)
+    }
+
+    package func getModel(modelURL: URL, gpuLayers: Int32) -> Zenz? {
         if let model = self.zenz, model.resourceURL == modelURL {
             self.zenzStatus = "load \(modelURL.absoluteString)"
             return model
@@ -62,7 +79,7 @@ import SwiftUtils
             return []
         }
         guard options.zenzaiMode.versionDependentMode.version == .v2 else {
-            print("next character prediction requires zenz-v2 models, not zenz-v1")
+            print("next character prediction requires zenz-v2 models, not zenz-v1 nor zenz-v3 and later")
             return []
         }
         let results = zenz.predictNextCharacter(leftSideContext: leftSideContext, count: count)
@@ -602,16 +619,22 @@ import SwiftUtils
                 zenzaiCache: self.zenzaiCache,
                 inferenceLimit: zenzaiMode.inferenceLimit,
                 requestRichCandidates: zenzaiMode.requestRichCandidates,
+                personalizationMode: self.getZenzaiPersonalization(mode: zenzaiMode.personalizationMode),
                 versionDependentConfig: zenzaiMode.versionDependentMode
             )
             self.zenzaiCache = cache
             self.previousInputData = inputData
             return (result, nodes)
         }
+        #if os(iOS)
+        let needTypoCorrection = true
+        #else
+        let needTypoCorrection = false
+        #endif
 
         guard let previousInputData else {
             debug("convertToLattice: 新規計算用の関数を呼びますA")
-            let result = converter.kana2lattice_all(inputData, N_best: N_best)
+            let result = converter.kana2lattice_all(inputData, N_best: N_best, needTypoCorrection: needTypoCorrection)
             self.previousInputData = inputData
             return result
         }
@@ -628,7 +651,7 @@ import SwiftUtils
         // 文節確定の後の場合
         if let completedData, previousInputData.inputHasSuffix(inputOf: inputData) {
             debug("convertToLattice: 文節確定用の関数を呼びます、確定された文節は\(completedData)")
-            let result = converter.kana2lattice_afterComplete(inputData, completedData: completedData, N_best: N_best, previousResult: (inputData: previousInputData, nodes: nodes))
+            let result = converter.kana2lattice_afterComplete(inputData, completedData: completedData, N_best: N_best, previousResult: (inputData: previousInputData, nodes: nodes), needTypoCorrection: needTypoCorrection)
             self.previousInputData = inputData
             self.completedData = nil
             return result
@@ -650,7 +673,7 @@ import SwiftUtils
         // 一文字変わった場合
         if diff.deleted > 0 {
             debug("convertToLattice: 最後尾文字置換用の関数を呼びます、差分は\(diff)")
-            let result = converter.kana2lattice_changed(inputData, N_best: N_best, counts: (diff.deleted, diff.addedCount), previousResult: (inputData: previousInputData, nodes: nodes))
+            let result = converter.kana2lattice_changed(inputData, N_best: N_best, counts: (diff.deleted, diff.addedCount), previousResult: (inputData: previousInputData, nodes: nodes), needTypoCorrection: needTypoCorrection)
             self.previousInputData = inputData
             return result
         }
@@ -658,7 +681,7 @@ import SwiftUtils
         // 1文字増やした場合
         if diff.deleted == 0 && diff.addedCount != 0 {
             debug("convertToLattice: 最後尾追加用の関数を呼びます、追加文字数は\(diff.addedCount)")
-            let result = converter.kana2lattice_added(inputData, N_best: N_best, addedCount: diff.addedCount, previousResult: (inputData: previousInputData, nodes: nodes))
+            let result = converter.kana2lattice_added(inputData, N_best: N_best, addedCount: diff.addedCount, previousResult: (inputData: previousInputData, nodes: nodes), needTypoCorrection: needTypoCorrection)
             self.previousInputData = inputData
             return result
         }
@@ -666,7 +689,7 @@ import SwiftUtils
         // 一文字増やしていない場合
         if true {
             debug("convertToLattice: 新規計算用の関数を呼びますB")
-            let result = converter.kana2lattice_all(inputData, N_best: N_best)
+            let result = converter.kana2lattice_all(inputData, N_best: N_best, needTypoCorrection: needTypoCorrection)
             self.previousInputData = inputData
             return result
         }

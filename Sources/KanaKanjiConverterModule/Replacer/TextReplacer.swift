@@ -19,13 +19,21 @@ public struct TextReplacer: Sendable {
     private var emojiGroups: [EmojiGroup] = []
     private var nonBaseEmojis: Set<String> = []
 
+    /// データを正しく持てているかを確認するためのプロパティ
+    var isEmpty: Bool {
+        emojiSearchDict.isEmpty && emojiGroups.isEmpty && nonBaseEmojis.isEmpty
+    }
+
     public init(emojiDataProvider: () -> URL) {
         var emojiSearchDict: [String: [String]] = [:]
         var emojiGroups: [EmojiGroup] = []
         do {
             let string = try String(contentsOf: emojiDataProvider(), encoding: .utf8)
-            let lines = string.split(separator: "\n")
+            let lines = string.components(separatedBy: .newlines)
             for line in lines {
+                if line.isEmpty {
+                    continue
+                }
                 let splited = line.split(separator: "\t", omittingEmptySubsequences: false)
                 guard splited.count == 3 else {
                     debug("error", line)
@@ -46,11 +54,22 @@ public struct TextReplacer: Sendable {
             self.emojiGroups = emojiGroups
             self.emojiSearchDict = emojiSearchDict
         } catch {
-            debug(error)
+            debug("Error: 絵文字データを読み込めませんでした。このエラーは深刻ではありません。 Description: \(error.localizedDescription)")
             self.emojiSearchDict = emojiSearchDict
             self.emojiGroups = emojiGroups
             return
         }
+    }
+
+    /// 動作しない`TextReplacer`を構築するためのイニシャライザ
+    /// - parameters:
+    ///   - isEmpty: 入力
+    private init(isEmpty: Bool) {
+        assert(isEmpty)
+    }
+
+    public static var empty: Self {
+        Self(isEmpty: true)
     }
 
     @available(*, deprecated, renamed: "init(emojiDataProvider:)", message: "it be removed in AzooKeyKanaKanjiConverter v1.0")
@@ -84,7 +103,7 @@ public struct TextReplacer: Sendable {
         }
     }
 
-    public struct SearchResultItem: Sendable {
+    public struct SearchResultItem: Sendable, Equatable, Hashable {
         public var query: String
         public var text: String
         public var inputable: Bool {

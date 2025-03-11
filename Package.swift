@@ -2,8 +2,9 @@
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
+import Foundation
 
-let swiftSettings: [SwiftSetting] = [
+var swiftSettings: [SwiftSetting] = [
     .enableUpcomingFeature("BareSlashRegexLiterals"),
     .enableUpcomingFeature("ConciseMagicFile"),
     .enableUpcomingFeature("ExistentialAny"),
@@ -11,7 +12,7 @@ let swiftSettings: [SwiftSetting] = [
     .enableUpcomingFeature("ImplicitOpenExistentials"),
     .enableUpcomingFeature("StrictConcurrency"),
     .enableUpcomingFeature("DisableOutwardActorInference"),
-    .enableUpcomingFeature("ImportObjcForwardDeclarations")
+    .enableUpcomingFeature("ImportObjcForwardDeclarations"),
 ]
 
 var dependencies: [Package.Dependency] = [
@@ -19,8 +20,23 @@ var dependencies: [Package.Dependency] = [
     // .package(url: /* package url */, from: "1.0.0"),
     .package(url: "https://github.com/apple/swift-algorithms", from: "1.0.0"),
     .package(url: "https://github.com/apple/swift-collections", from: "1.0.0"),
-    .package(url: "https://github.com/apple/swift-argument-parser", .upToNextMajor(from: "1.0.0"))
+    .package(url: "https://github.com/apple/swift-argument-parser", .upToNextMajor(from: "1.0.0")),
+    .package(url: "https://github.com/ensan-hcl/swift-tokenizers", branch: "feat/minimum")
 ]
+
+var efficientNGramDependencies: [Target.Dependency] = [.product(name: "Transformers", package: "swift-tokenizers")]
+#if (!os(Linux) || !canImport(Android)) && !os(Windows)
+// Android環境・Windows環境ではSwiftyMarisaが利用できないため、除外する。
+// したがって、EfficientNGramの動作はサポートしない。
+if let envValue = ProcessInfo.processInfo.environment["LLAMA_MOCK"], envValue == "1" {
+    // LLAMA_MOCK=1の場合もサポートしない
+} else {
+    dependencies.append(.package(url: "https://github.com/ensan-hcl/SwiftyMarisa", branch: "6e145aef5583aac96dd7ff8f9fbb9944d893128e"))
+    efficientNGramDependencies.append("SwiftyMarisa")
+    swiftSettings.append(.interoperabilityMode(.Cxx))
+}
+#endif
+
 
 var targets: [Target] = [
     // Targets are the basic building blocks of a package. A target can define a module or a test suite.
@@ -34,6 +50,12 @@ var targets: [Target] = [
         swiftSettings: swiftSettings
     ),
     .target(
+        name: "EfficientNGram",
+        dependencies: efficientNGramDependencies,
+        resources: [.copy("tokenizer")],
+        swiftSettings: swiftSettings
+    ),
+    .target(
         name: "KanaKanjiConverterModuleWithDefaultDictionary",
         dependencies: [
             "KanaKanjiConverterModule"
@@ -41,9 +63,14 @@ var targets: [Target] = [
         exclude: [
             "azooKey_dictionary_storage/README.md",
             "azooKey_dictionary_storage/LICENSE",
+            "azooKey_emoji_dictionary_storage/data",
+            "azooKey_emoji_dictionary_storage/scripts",
+            "azooKey_emoji_dictionary_storage/requirements.txt",
+            "azooKey_emoji_dictionary_storage/README.md",
         ],
         resources: [
             .copy("azooKey_dictionary_storage/Dictionary"),
+            .copy("azooKey_emoji_dictionary_storage/EmojiDictionary"),
         ],
         swiftSettings: swiftSettings
     ),
@@ -52,11 +79,18 @@ var targets: [Target] = [
         dependencies: [
             "KanaKanjiConverterModuleWithDefaultDictionary",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
-        ]
+        ],
+        swiftSettings: swiftSettings
     ),
     .testTarget(
         name: "SwiftUtilsTests",
         dependencies: ["SwiftUtils"],
+        resources: [],
+        swiftSettings: swiftSettings
+    ),
+    .testTarget(
+        name: "EfficientNGramTests",
+        dependencies: ["EfficientNGram"],
         resources: [],
         swiftSettings: swiftSettings
     ),
@@ -78,13 +112,39 @@ var targets: [Target] = [
     )
 ]
 
+#if os(Linux) && !canImport(Android)
+func checkObjcAvailability() -> Bool {
+    do {
+        let linkCheck = Process()
+        linkCheck.executableURL = URL(fileURLWithPath: "/bin/sh")
+        linkCheck.arguments = ["-c", "echo 'int main() { return 0; }' | clang -x c - -lobjc -o /dev/null"]
+        
+        try linkCheck.run()
+        linkCheck.waitUntilExit()
+        
+        if linkCheck.terminationStatus != 0 {
+            print("Cannot link with -lobjc")
+            return false
+        }
+        return true
+    } catch {
+        print("Error checking Objective-C availability: \(error)")
+        return false
+    }
+}
 
-#if !(os(Windows))
-dependencies.append(
-    .package(url: "https://github.com/7ka-Hiira/llama.cpp", branch: "65c801d")
-)
+if checkObjcAvailability() {
+    print("Objective-C runtime is available")
+    targets = targets.map { target in
+        if target.name == "CliTool" || target.name == "KanaKanjiConverterModuleWithDefaultDictionaryTests" {
+        let modifiedTarget = target
+        modifiedTarget.linkerSettings = [.linkedLibrary("objc")]
+        return modifiedTarget
+        }
+        return target
+    }
+}
 #endif
-
 
 #if os(Windows)
 targets.append(contentsOf: [
@@ -96,28 +156,50 @@ targets.append(contentsOf: [
         dependencies: [
             "SwiftUtils",
             "llama.cpp",
-            .product(name: "Collections", package: "swift-collections")
+            "EfficientNGram",
+            .product(name: "Collections", package: "swift-collections"),
         ],
         swiftSettings: swiftSettings
     )
 ])
 #else
-targets.append(contentsOf: [
-    .target(
-        name: "KanaKanjiConverterModule",
-        dependencies: [
-            "SwiftUtils",
-            .product(name: "llama", package: "llama.cpp"),
-            .product(name: "Collections", package: "swift-collections")
-        ],
-        swiftSettings: swiftSettings
+if let envValue = ProcessInfo.processInfo.environment["LLAMA_MOCK"], envValue == "1" {
+    targets.append(contentsOf: [
+        .target(name: "llama-mock"),
+        .target(
+            name: "KanaKanjiConverterModule",
+            dependencies: [
+                "SwiftUtils",
+                "llama-mock",
+                "EfficientNGram",
+                .product(name: "Collections", package: "swift-collections"),
+            ],
+            swiftSettings: swiftSettings
+        )
+    ])
+} else {
+    dependencies.append(
+        .package(url: "https://github.com/7ka-Hiira/llama.cpp", branch: "65c801d")
     )
-])
+
+    targets.append(contentsOf: [
+        .target(
+            name: "KanaKanjiConverterModule",
+            dependencies: [
+                "SwiftUtils",
+                "EfficientNGram",
+                .product(name: "llama", package: "llama.cpp"),
+                .product(name: "Collections", package: "swift-collections"),
+            ],
+            swiftSettings: swiftSettings
+        )
+    ])
+}
 #endif
 
 let package = Package(
     name: "AzooKeyKanakanjiConverter",
-    platforms: [.iOS(.v14), .macOS(.v12)],
+    platforms: [.iOS(.v15), .macOS(.v13)],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
         .library(

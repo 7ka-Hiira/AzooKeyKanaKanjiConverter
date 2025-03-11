@@ -1,13 +1,5 @@
-//
-//  EmailAddressConversionTests.swift
-//  azooKeyTests
-//
-//  Created by ensan on 2022/12/26.
-//  Copyright © 2022 ensan. All rights reserved.
-//
-
-@testable import KanaKanjiConverterModule
 import XCTest
+@testable import KanaKanjiConverterModule
 
 final class EmailAddressConversionTests: XCTestCase {
     func makeDirectInput(direct input: String) -> ComposingText {
@@ -52,6 +44,27 @@ final class EmailAddressConversionTests: XCTestCase {
             XCTAssertTrue(result.contains(where: {$0.text == "@i.softbank.jp"}))
         }
 
-    }
+        // New tests for partial domain inputs
+        do {
+            let converter = await KanaKanjiConverter()
+            let input = makeDirectInput(direct: "azooKey@g")
+            let result = await converter.toEmailAddressCandidates(input)
+            XCTAssertFalse(result.isEmpty)
+            XCTAssertTrue(result.contains(where: {$0.text == "azooKey@gmail.com"}))
+            XCTAssertTrue(result.contains(where: {$0.text == "azooKey@googlemail.com"}))
+            XCTAssertFalse(result.contains(where: {$0.text == "azooKey@yahoo.co.jp"}))
+        }
 
+        do {
+            let converter = await KanaKanjiConverter()
+            let input = makeDirectInput(direct: "azooKey@y")
+            let result = await converter.toEmailAddressCandidates(input)
+            XCTAssertFalse(result.isEmpty)
+            XCTAssertTrue(result.contains(where: {$0.text == "azooKey@yahoo.co.jp"}))
+            XCTAssertTrue(result.contains(where: {$0.text == "azooKey@yahoo.ne.jp"}))
+            XCTAssertTrue(result.contains(where: {$0.text == "azooKey@ybb.ne.jp"}))
+            XCTAssertTrue(result.contains(where: {$0.text == "azooKey@ymobile.ne.jp"}))
+            XCTAssertFalse(result.contains(where: {$0.text == "azooKey@gmail.com"}))
+        }
+    }
 }

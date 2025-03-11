@@ -1,11 +1,3 @@
-//
-//  EmailAddress.swift
-//  Keyboard
-//
-//  Created by ensan on 2022/10/01.
-//  Copyright © 2022 ensan. All rights reserved.
-//
-
 import Foundation
 
 extension KanaKanjiConverter {
@@ -35,10 +27,11 @@ extension KanaKanjiConverter {
     /// 入力が@で終わる場合に、メアドのような候補を追加する関数
     /// - parameters:
     func toEmailAddressCandidates(_ inputData: ComposingText) -> [Candidate] {
-        if !inputData.convertTarget.hasSuffix("@") {
+        guard let atIndex = inputData.convertTarget.lastIndex(of: "@") else {
             return []
         }
-        let id = inputData.convertTarget.dropLast(1)
+        let id = inputData.convertTarget[..<atIndex]
+        let domainPrefix = inputData.convertTarget[inputData.convertTarget.index(after: atIndex)...]
         if !(id.isEnglishSentence || id.isEmpty) {
             return []
         }
@@ -46,16 +39,18 @@ extension KanaKanjiConverter {
         let string = inputData.convertTarget.toKatakana()
         var results: [Candidate] = []
         for (i, domain) in Self.domains.enumerated() {
-            let address = id.appending(domain)
-            results.append(
-                Candidate(
-                    text: address,
-                    value: baseValue - PValue(i),
-                    correspondingCount: inputData.input.count,
-                    lastMid: MIDData.一般.mid,
-                    data: [DicdataElement(word: address, ruby: string, cid: .zero, mid: MIDData.一般.mid, value: baseValue - PValue(i))]
+            if domain.hasPrefix("@\(domainPrefix)") {
+                let address = id.appending(domain)
+                results.append(
+                    Candidate(
+                        text: address,
+                        value: baseValue - PValue(i),
+                        correspondingCount: inputData.input.count,
+                        lastMid: MIDData.一般.mid,
+                        data: [DicdataElement(word: address, ruby: string, cid: .zero, mid: MIDData.一般.mid, value: baseValue - PValue(i))]
+                    )
                 )
-            )
+            }
         }
         return results
     }

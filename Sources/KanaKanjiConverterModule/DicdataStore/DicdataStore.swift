@@ -26,6 +26,7 @@ public final class DicdataStore {
     private var mmValue: [PValue] = []
 
     private var loudses: [String: LOUDS] = [:]
+    private var loudstxts: [String: Data] = [:]    
     private var importedLoudses: Set<String> = []
     private var charsID: [Character: UInt8] = [:]
     private var learningManager = LearningManager()
@@ -54,7 +55,7 @@ public final class DicdataStore {
             let string = try String(contentsOf: self.requestOptions.dictionaryResourceURL.appendingPathComponent("louds/charID.chid", isDirectory: false), encoding: String.Encoding.utf8)
             charsID = [Character: UInt8].init(uniqueKeysWithValues: string.enumerated().map {($0.element, UInt8($0.offset))})
         } catch {
-            debug("ファイルが存在しません: \(error)")
+            debug("Error: louds/charID.chidが存在しません。このエラーは深刻ですが、テスト時には無視できる場合があります。Description: \(error)")
         }
         do {
             let url = requestOptions.dictionaryResourceURL.appendingPathComponent("mm.binary", isDirectory: false)
@@ -62,12 +63,46 @@ public final class DicdataStore {
                 let binaryData = try Data(contentsOf: url, options: [.uncached])
                 self.mmValue = binaryData.toArray(of: Float.self).map {PValue($0)}
             } catch {
-                debug("Failed to read the file.")
+                debug("Error: mm.binaryが存在しません。このエラーは深刻ですが、テスト時には無視できる場合があります。Description: \(error)")
                 self.mmValue = [PValue].init(repeating: .zero, count: self.midCount * self.midCount)
             }
         }
         _ = self.loadLOUDS(query: "user")
         _ = self.loadLOUDS(query: "memory")
+
+        if requestOptions.preloadDictionary {
+            self.preloadDictionary()
+        }
+    }
+
+    /// ファイルI/Oの遅延を減らすために、辞書を事前に読み込む関数。
+    private func preloadDictionary() {
+        guard let fileURLs = try? FileManager.default.contentsOfDirectory(
+            at: self.requestOptions.dictionaryResourceURL.appendingPathComponent("louds", isDirectory: true),
+            includingPropertiesForKeys: nil
+        ) else { return }
+
+        for url in fileURLs {
+            let identifier = url.deletingPathExtension().lastPathComponent
+            let pathExt = url.pathExtension
+            
+            switch pathExt {
+                case "louds":
+                    // userやmemoryは実行中に更新される場合があるため、キャッシュから除外
+                    if identifier == "user" || identifier == "memory" {
+                        continue
+                    }
+                    loudses[identifier] = LOUDS.load(identifier, option: self.requestOptions)
+                case "loudstxt3":
+                    if let data = try? Data(contentsOf: url) {
+                        loudstxts[identifier] = data
+                    } else {
+                        debug("Error: Could not load loudstxt3 file at \(url)")
+                    }
+                default:
+                    continue
+            }
+        }
     }
 
     public enum Notification {
@@ -162,25 +197,29 @@ public final class DicdataStore {
         importedLoudses.insert(query)
         // 一部のASCII文字はエスケープする
         let identifier = [
-            #"\n"#: "[0A]",
-            #" "#: "[20]",
-            #"""#: "[22]",
-            #"'"#: "[27]",
-            #"*"#: "[2A]",
-            #"+"#: "[2B]",
-            #"."#: "[2E]",
-            #"/"#: "[2F]",
-            #":"#: "[3A]",
-            #"<"#: "[3C]",
-            #">"#: "[3E]",
-            #"\"#: "[5C]",
-            #"|"#: "[7C]",
+            "\\n": "[0A]",
+            " ": "[20]",
+            "\"": "[22]",
+            "\'": "[27]",
+            "*": "[2A]",
+            "+": "[2B]",
+            ".": "[2E]",
+            "/": "[2F]",
+            ":": "[3A]",
+            "<": "[3C]",
+            ">": "[3E]",
+            "\\": "[5C]",
+            "|": "[7C]",
         ][query, default: query]
         if let louds = LOUDS.load(identifier, option: self.requestOptions) {
             self.loudses[query] = louds
             return louds
         } else {
-            debug("loudsの読み込みに失敗、identifierは\(query)(id: \(identifier))")
+            if identifier == "user" || identifier == "memory" {
+                debug("Error: IDが「\(identifier) (query: \(query))」のloudsファイルの読み込みに失敗しましたが、このエラーは深刻ではありません。")
+            } else {
+                debug("Error: IDが「\(identifier) (query: \(query))」のloudsファイルの読み込みに失敗しました。IDに対する辞書データが存在しないことが想定される場合はこのエラーは深刻ではありませんが、そうでない場合は深刻なエラーの可能性があります。")
+            }
             return nil
         }
     }
@@ -209,12 +248,11 @@ public final class DicdataStore {
     }
 
     package func getDicdataFromLoudstxt3(identifier: String, indices: some Sequence<Int>) -> [DicdataElement] {
-        debug("getDicdataFromLoudstxt3", identifier, indices)
         // split = 2048
         let dict = [Int: [Int]].init(grouping: indices, by: {$0 >> 11})
         var data: [DicdataElement] = []
         for (key, value) in dict {
-            data.append(contentsOf: LOUDS.getDataForLoudstxt3(identifier + "\(key)", indices: value.map {$0 & 2047}, option: self.requestOptions))
+            data.append(contentsOf: LOUDS.getDataForLoudstxt3(identifier + "\(key)", indices: value.map {$0 & 2047}, cache: self.loudstxts[identifier + "\(key)"], option: self.requestOptions))
         }
         if identifier == "memory" {
             data.mutatingForeach {
@@ -240,7 +278,6 @@ public final class DicdataStore {
         }
         let toIndexLeft = toIndexRange?.startIndex ?? fromIndex
         let toIndexRight = min(toIndexRange?.endIndex ?? inputData.input.count, fromIndex + self.maxlength)
-        debug("getLOUDSDataInRange", fromIndex, toIndexRange?.description ?? "nil", toIndexLeft, toIndexRight)
         if fromIndex > toIndexLeft || toIndexLeft >= toIndexRight {
             debug("getLOUDSDataInRange: index is wrong")
             return []
@@ -415,13 +452,16 @@ public final class DicdataStore {
     ///   - inputData: 入力データ
     ///   - from: 始点
     ///   - to: 終点
-    public func getLOUDSData(inputData: ComposingText, from fromIndex: Int, to toIndex: Int) -> [LatticeNode] {
+    public func getLOUDSData(inputData: ComposingText, from fromIndex: Int, to toIndex: Int, needTypoCorrection: Bool) -> [LatticeNode] {
         if toIndex - fromIndex > self.maxlength || fromIndex > toIndex {
             return []
         }
         let segment = inputData.input[fromIndex...toIndex].reduce(into: "") {$0.append($1.character)}.toKatakana()
 
-        let string2penalty = inputData.getRangeWithTypos(fromIndex, toIndex)
+        // TODO: 最適化の余地あり
+        let string2penalty = inputData.getRangeWithTypos(fromIndex, toIndex).filter {
+            needTypoCorrection || $0.value == 0.0
+        }
 
         // MARK: 検索によって得たindicesから辞書データを実際に取り出していく
         // 先頭の文字: そこで検索したい文字列の集合
@@ -486,7 +526,9 @@ public final class DicdataStore {
         }
 
         dicdata.append(contentsOf: self.getWiseDicdata(convertTarget: segment, inputData: inputData, inputRange: fromIndex ..< toIndex + 1))
-        dicdata.append(contentsOf: self.getMatchDynamicUserDict(segment))
+        for segment in string2penalty.keys {
+            dicdata.append(contentsOf: self.getMatchDynamicUserDict(String(segment)))
+        }
 
         if fromIndex == .zero {
             let result: [LatticeNode] = dicdata.map {
@@ -509,7 +551,7 @@ public final class DicdataStore {
             let dicdata: [DicdataElement] = csvData.map {self.parseLoudstxt2FormattedEntry(from: $0)}
             return dicdata
         } catch {
-            debug(error)
+            debug("Error: 右品詞ID\(lastRcid)のためのZero Hint Predictionのためのデータの読み込みに失敗しました。このエラーは深刻ですが、テスト時には無視できる場合があります。 Description: \(error.localizedDescription)")
             return []
         }
     }
@@ -572,7 +614,7 @@ public final class DicdataStore {
         result.append(contentsOf: self.getJapaneseNumberDicdata(head: convertTarget))
         if inputData.input[..<inputRange.startIndex].last?.character.isNumber != true && inputData.input[inputRange.endIndex...].first?.character.isNumber != true, let number = Int(convertTarget) {
             result.append(DicdataElement(ruby: convertTarget, cid: CIDData.数.cid, mid: MIDData.小さい数字.mid, value: -14))
-            if number <= Int(1E12) && -Int(1E12) <= number, let kansuji = self.numberFormatter.string(from: NSNumber(value: number)) {
+            if Double(number) <= 1E12 && -1E12 <= Double(number), let kansuji = self.numberFormatter.string(from: NSNumber(value: number)) {
                 result.append(DicdataElement(word: kansuji, ruby: convertTarget, cid: CIDData.数.cid, mid: MIDData.小さい数字.mid, value: -16))
             }
         }
@@ -703,7 +745,7 @@ public final class DicdataStore {
             let binaryData = try Data(contentsOf: url, options: [.uncached])
             return binaryData.toArray(of: (Int32, Float).self)
         } catch {
-            debug("Failed to read the file.", error)
+            debug("Error: 品詞連接コストデータの読み込みに失敗しました。このエラーは深刻ですが、テスト時には無視できる場合があります。 Description: \(error.localizedDescription)")
             return []
         }
     }
