@@ -25,7 +25,9 @@ var dependencies: [Package.Dependency] = [
 ]
 
 var efficientNGramDependencies: [Target.Dependency] = [.product(name: "Transformers", package: "swift-tokenizers")]
-#if (!os(Linux) || !canImport(Android)) && !os(Windows)
+
+// CxxInteroperabilityModeにするとHazkeyのビルドが面倒になるので除外
+#if false
 // Android環境・Windows環境ではSwiftyMarisaが利用できないため、除外する。
 // したがって、EfficientNGramの動作はサポートしない。
 if let envValue = ProcessInfo.processInfo.environment["LLAMA_MOCK"], envValue == "1" {
