@@ -119,11 +119,8 @@ extension Subcommands {
             }
             print("Working with \(learningType) mode. Memory path is \(memoryDirectory).")
 
-            let converter = KanaKanjiConverter()
-            converter.sendToDicdataStore(
-                .setRequestOptions(requestOptions(learningType: learningType, memoryDirectory: memoryDirectory, leftSideContext: nil))
-            )
-            converter.sendToDicdataStore(.importDynamicUserDict(userDictionary))
+            let converter = KanaKanjiConverter.withDefaultDictionary()
+            converter.importDynamicUserDictionary(userDictionary)
             var composingText = ComposingText()
             let inputStyle: InputStyle = self.roman2kana ? .roman2kana : .direct
             var lastCandidates: [Candidate] = []
@@ -181,7 +178,7 @@ extension Subcommands {
                 case ":s", ":save":
                     composingText.stopComposition()
                     converter.stopComposition()
-                    converter.sendToDicdataStore(.closeKeyboard)
+                    converter.commitUpdateLearningData()
                     if learningType.needUpdateMemory {
                         print("saved")
                     } else {
@@ -315,13 +312,11 @@ extension Subcommands {
             } else {
                 personalizationMode = nil
             }
-            var option: ConvertRequestOptions = .withDefaultDictionary(
+            var option: ConvertRequestOptions = .init(
                 N_best: self.onlyWholeConversion ? max(self.configNBest, self.displayTopN) : self.configNBest,
                 requireJapanesePrediction: !self.onlyWholeConversion && !self.disablePrediction,
                 requireEnglishPrediction: false,
                 keyboardLanguage: .ja_JP,
-                typographyLetterCandidate: false,
-                unicodeCandidate: true,
                 englishCandidateInRoman2KanaInput: self.mixEnglishCandidate,
                 fullWidthRomanCandidate: false,
                 halfWidthKanaCandidate: false,
@@ -329,6 +324,8 @@ extension Subcommands {
                 shouldResetMemory: false,
                 memoryDirectoryURL: memoryDirectory,
                 sharedContainerURL: URL(fileURLWithPath: ""),
+                textReplacer: .withDefaultEmojiDictionary(),
+                specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders,
                 zenzaiMode: self.zenzWeightPath.isEmpty ? .off : .on(
                     weight: URL(string: self.zenzWeightPath)!,
                     inferenceLimit: self.configZenzaiInferenceLimit,

@@ -280,6 +280,5 @@ struct Lattice: Sequence {
                 .input(from: from + inputOffset, to: to + inputOffset)
             }
         }
-
     }
 }

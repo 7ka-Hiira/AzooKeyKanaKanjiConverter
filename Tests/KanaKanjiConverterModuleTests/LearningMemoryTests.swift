@@ -4,13 +4,8 @@ import XCTest
 final class LearningMemoryTests: XCTestCase {
     static let resourceURL = Bundle.module.resourceURL!.appendingPathComponent("DictionaryMock", isDirectory: true)
 
-    private func getOptionsForMemoryTest(memoryDirectoryURL: URL) -> ConvertRequestOptions {
-        var options = ConvertRequestOptions.default
-        options.memoryDirectoryURL = memoryDirectoryURL
-        options.dictionaryResourceURL = Self.resourceURL
-        options.learningType = .inputAndOutput
-        options.maxMemoryCount = 32
-        return options
+    private func getConfigForMemoryTest(memoryURL: URL) -> LearningConfig {
+        .init(learningType: .inputAndOutput, maxMemoryCount: 32, memoryURL: memoryURL)
     }
 
     func testPauseFileIsClearedOnInit() throws {
@@ -18,9 +13,9 @@ final class LearningMemoryTests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let options = self.getOptionsForMemoryTest(memoryDirectoryURL: dir)
-        let manager = LearningManager()
-        _ = manager.setRequestOptions(options)
+        let config = self.getConfigForMemoryTest(memoryURL: dir)
+        let manager = LearningManager(dictionaryURL: Self.resourceURL)
+        _ = manager.updateConfig(config)
 
         let element = DicdataElement(word: "テスト", ruby: "テスト", cid: CIDData.一般名詞.cid, mid: MIDData.一般.mid, value: -10)
         manager.update(data: [element])
@@ -32,7 +27,7 @@ final class LearningMemoryTests: XCTestCase {
         XCTAssertTrue(LongTermLearningMemory.memoryCollapsed(directoryURL: dir))
 
         // ここで副作用が発生
-        _ = manager.setRequestOptions(options)
+        _ = manager.updateConfig(config)
 
         // 学習の破壊状態が回復されていることを確認
         XCTAssertFalse(LongTermLearningMemory.memoryCollapsed(directoryURL: dir))
@@ -44,9 +39,9 @@ final class LearningMemoryTests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let options = self.getOptionsForMemoryTest(memoryDirectoryURL: dir)
-        let manager = LearningManager()
-        _ = manager.setRequestOptions(options)
+        let config = self.getConfigForMemoryTest(memoryURL: dir)
+        let manager = LearningManager(dictionaryURL: Self.resourceURL)
+        _ = manager.updateConfig(config)
 
         let element = DicdataElement(word: "テスト", ruby: "テスト", cid: CIDData.一般名詞.cid, mid: MIDData.一般.mid, value: -10)
         manager.update(data: [element])
@@ -58,7 +53,7 @@ final class LearningMemoryTests: XCTestCase {
         XCTAssertTrue(files.contains { $0.lastPathComponent == "memory.memorymetadata" })
         XCTAssertTrue(files.contains { $0.lastPathComponent.hasSuffix(".loudstxt3") })
 
-        manager.reset()
+        manager.resetMemory()
         let filesAfter = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
         XCTAssertTrue(filesAfter.isEmpty)
     }
@@ -67,36 +62,32 @@ final class LearningMemoryTests: XCTestCase {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("LearningManagerPersistence-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
+        let dicdataStore = DicdataStore(dictionaryURL: Self.resourceURL)
 
-        let options = self.getOptionsForMemoryTest(memoryDirectoryURL: dir)
-        let manager = LearningManager()
-        _ = manager.setRequestOptions(options)
+        let config = self.getConfigForMemoryTest(memoryURL: dir)
+        let state = dicdataStore.prepareState()
+        _ = state.learningMemoryManager.updateConfig(config)
         let element = DicdataElement(word: "テスト", ruby: "テスト", cid: CIDData.一般名詞.cid, mid: MIDData.一般.mid, value: -10)
-        manager.update(data: [element])
-        manager.save()
+        state.learningMemoryManager.update(data: [element])
+        state.learningMemoryManager.save()
 
-        let dicdataStore = DicdataStore(requestOptions: options)
-        dicdataStore.sendToDicdataStore(.setRequestOptions(options))
         let charIDs = "テスト".map { dicdataStore.character2charId($0) }
-        let indices = dicdataStore.perfectMatchingSearch(query: "memory", charIDs: charIDs)
-        let dicdata = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices)
+        let indices = dicdataStore.perfectMatchingSearch(query: "memory", charIDs: charIDs, state: state)
+        let dicdata = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices, state: state)
         XCTAssertFalse(dicdata.isEmpty)
         XCTAssertTrue(dicdata.contains { $0.word == element.word && $0.ruby == element.ruby })
 
-        dicdataStore.sendToDicdataStore(
-            .forgetMemory(
-                Candidate(
-                    text: element.word,
-                    value: element.value(),
-                    composingCount: .inputCount(3),
-                    lastMid: element.mid,
-                    data: [element]
-                )
+        state.forgetMemory(
+            Candidate(
+                text: element.word,
+                value: element.value(),
+                composingCount: .inputCount(3),
+                lastMid: element.mid,
+                data: [element]
             )
         )
-
-        let indices2 = dicdataStore.perfectMatchingSearch(query: "memory", charIDs: charIDs)
-        let dicdata2 = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices2)
+        let indices2 = dicdataStore.perfectMatchingSearch(query: "memory", charIDs: charIDs, state: state)
+        let dicdata2 = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices2, state: state)
         XCTAssertFalse(dicdata2.contains { $0.word == element.word && $0.ruby == element.ruby })
     }
 
@@ -105,39 +96,35 @@ final class LearningMemoryTests: XCTestCase {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("LearningManagerPersistence-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
+        let dicdataStore = DicdataStore(dictionaryURL: Self.resourceURL)
 
-        let options = self.getOptionsForMemoryTest(memoryDirectoryURL: dir)
-        let manager = LearningManager()
-        _ = manager.setRequestOptions(options)
+        let config = self.getConfigForMemoryTest(memoryURL: dir)
+        let state = dicdataStore.prepareState()
+        _ = state.learningMemoryManager.updateConfig(config)
         let element = DicdataElement(word: "テスト", ruby: "テスト", cid: CIDData.一般名詞.cid, mid: MIDData.一般.mid, value: -10)
-        manager.update(data: [element])
+        state.learningMemoryManager.update(data: [element])
         let differentCidElement = DicdataElement(word: "テスト", ruby: "テスト", cid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -10)
-        manager.update(data: [differentCidElement])
-        manager.save()
+        state.learningMemoryManager.update(data: [differentCidElement])
+        state.learningMemoryManager.save()
 
-        let dicdataStore = DicdataStore(requestOptions: options)
-        dicdataStore.sendToDicdataStore(.setRequestOptions(options))
         let charIDs = "テスト".map { dicdataStore.character2charId($0) }
-        let indices = dicdataStore.perfectMatchingSearch(query: "memory", charIDs: charIDs)
-        let dicdata = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices)
+        let indices = dicdataStore.perfectMatchingSearch(query: "memory", charIDs: charIDs, state: state)
+        let dicdata = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices, state: state)
         XCTAssertFalse(dicdata.isEmpty)
         XCTAssertEqual(dicdata.count { $0.word == element.word && $0.ruby == element.ruby }, 2)
 
-        dicdataStore.sendToDicdataStore(
-            .forgetMemory(
-                Candidate(
-                    text: element.word,
-                    value: element.value(),
-                    composingCount: .inputCount(3),
-                    lastMid: element.mid,
-                    data: [element]
-                )
+        state.forgetMemory(
+            Candidate(
+                text: element.word,
+                value: element.value(),
+                composingCount: .inputCount(3),
+                lastMid: element.mid,
+                data: [element]
             )
         )
 
-        let indices2 = dicdataStore.perfectMatchingSearch(query: "memory", charIDs: charIDs)
-        let dicdata2 = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices2)
+        let indices2 = dicdataStore.perfectMatchingSearch(query: "memory", charIDs: charIDs, state: state)
+        let dicdata2 = dicdataStore.getDicdataFromLoudstxt3(identifier: "memory", indices: indices2, state: state)
         XCTAssertFalse(dicdata2.contains { $0.word == element.word && $0.ruby == element.ruby })
     }
-
 }

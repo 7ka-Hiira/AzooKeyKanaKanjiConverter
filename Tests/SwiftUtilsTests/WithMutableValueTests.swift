@@ -17,5 +17,4 @@ final class WithMutableValueTests: XCTestCase {
         }
         XCTAssertEqual(array, [0, 2, 2, 3])
     }
-
 }

@@ -69,7 +69,6 @@ extension KanaKanjiConverter {
                     return String(scalar)
                 }
                 return String($0)
-
             }.joined()
             strings.append(bold)
         }

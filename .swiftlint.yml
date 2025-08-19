@@ -19,17 +19,25 @@ analyzer_rules:
   - unused_declaration
 
 opt_in_rules:
-  - implicit_return                   # implicit returnを推奨
-  - sorted_imports                    # importをsortする
   - array_init                        # Array()を推奨
+  - closure_end_indentation
+  - comma_inheritance
   - conditional_returns_on_newline
+  - direct_return
   - empty_string                      # 同上
   - explicit_init                     # explicitに.initを書かない
   - first_where                       # .filter { }.firstよりも.first(where:)を用いる．
+  - implicit_return                   # implicit returnを推奨
+  - modifier_order
   - operator_usage_whitespace         # 演算子の左右に空白を
-  - redundant_nil_coalescing          # ?? nilを禁止
   - reduce_into                       # reduce(into:)を推奨
+  - redundant_nil_coalescing          # ?? nilを禁止
+  - shorthand_optional_binding
+  - sorted_imports                    # importをsortする
   - toggle_bool                       # .toggleを推奨
+  - unused_parameter
+  - vertical_whitespace_closing_braces
+  - vertical_whitespace_opening_braces
 
 included:
   - Sources

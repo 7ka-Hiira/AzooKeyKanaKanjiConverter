@@ -12,9 +12,7 @@ import XCTest
 final class LOUDSTests: XCTestCase {
     static let resourceURL = Bundle.module.resourceURL!.standardizedFileURL.appendingPathComponent("DictionaryMock", isDirectory: true)
     func requestOptions() -> ConvertRequestOptions {
-        var options: ConvertRequestOptions = .default
-        options.dictionaryResourceURL = Self.resourceURL
-        return options
+        .default
     }
 
     func loadCharIDs() -> [Character: UInt8] {
@@ -30,7 +28,7 @@ final class LOUDSTests: XCTestCase {
     func testSearchNodeIndex() throws {
         // データリソースの場所を指定する
         print("Options: ", requestOptions())
-        let louds = LOUDS.load("シ", option: requestOptions())
+        let louds = LOUDS.load("シ", dictionaryURL: Self.resourceURL)
         XCTAssertNotNil(louds)
         guard let louds else { return }
         let charIDs = loadCharIDs()
@@ -40,7 +38,7 @@ final class LOUDSTests: XCTestCase {
         XCTAssertNotNil(index)
         guard let index else { return }
 
-        let dicdata: [DicdataElement] = LOUDS.getDataForLoudstxt3("シ" + "\(index >> 11)", indices: [index & 2047], option: requestOptions())
+        let dicdata: [DicdataElement] = LOUDS.getDataForLoudstxt3("シ" + "\(index >> 11)", indices: [index & 2047], dictionaryURL: Self.resourceURL)
         XCTAssertTrue(dicdata.contains {$0.word == "司会"})
         XCTAssertTrue(dicdata.contains {$0.word == "視界"})
         XCTAssertTrue(dicdata.contains {$0.word == "死界"})

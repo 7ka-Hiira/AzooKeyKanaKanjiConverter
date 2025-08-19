@@ -4,21 +4,26 @@ private indirect enum TrieNode {
         var resolvedAny1: InputPiece?
     }
 
-    case node(output: [InputTable.ValueElement]?, charChildren: [Character: TrieNode] = [:], separatorChild: TrieNode? = nil, any1Child: TrieNode? = nil)
+    struct KeySignature: Sendable, Equatable, Hashable {
+        var intention: Character?
+        var modifiers: Set<InputPiece.Modifier>
+    }
+
+    case node(output: [InputTable.ValueElement]?, charChildren: [Character: TrieNode] = [:], separatorChild: TrieNode? = nil, any1Child: TrieNode? = nil, keyChildren: [KeySignature: TrieNode] = [:])
 
     // Recursively insert a reversed key path and set the output when the path ends.
     mutating func add(reversedKey: some Collection<InputTable.KeyElement>, output: [InputTable.ValueElement]) {
         guard let head = reversedKey.first else {
             // Reached the end of the key; store kana
             switch self {
-            case let .node(_, charChildren, separatorChild, any1Child):
-                self = .node(output: output, charChildren: charChildren, separatorChild: separatorChild, any1Child: any1Child)
+            case let .node(_, charChildren, separatorChild, any1Child, keyChildren):
+                self = .node(output: output, charChildren: charChildren, separatorChild: separatorChild, any1Child: any1Child, keyChildren: keyChildren)
             }
             return
         }
         let rest = reversedKey.dropFirst()
         switch self {
-        case .node(let currentOutput, var charChildren, var separatorChild, var any1Child):
+        case .node(let currentOutput, var charChildren, var separatorChild, var any1Child, var keyChildren):
             var next: TrieNode
             switch head {
             case .any1:
@@ -35,15 +40,20 @@ private indirect enum TrieNode {
                     next = separatorChild ?? .node(output: nil)
                     next.add(reversedKey: rest, output: output)
                     separatorChild = next
+                case .key(let intention, let modifiers):
+                    let sig = KeySignature(intention: intention, modifiers: modifiers)
+                    next = keyChildren[sig] ?? .node(output: nil)
+                    next.add(reversedKey: rest, output: output)
+                    keyChildren[sig] = next
                 }
             }
-            self = .node(output: currentOutput, charChildren: charChildren, separatorChild: separatorChild, any1Child: any1Child)
+            self = .node(output: currentOutput, charChildren: charChildren, separatorChild: separatorChild, any1Child: any1Child, keyChildren: keyChildren)
         }
     }
 
     /// Fast check for whether this node has an output.
     var hasOutput: Bool {
-        switch self { case .node(let output, _, _, _): return output != nil }
+        switch self { case .node(let output, _, _, _, _): return output != nil }
     }
 
     /// Returns the kana sequence stored at this node, resolving `.any1`
@@ -51,7 +61,7 @@ private indirect enum TrieNode {
     /// (which is set when a wildcard edge was taken during the lookup).
     func outputValue(state: State) -> [Character]? {
         switch self {
-        case .node(let output, _, _, _):
+        case .node(let output, _, _, _, _):
             output?.compactMap { elem in
                 switch elem {
                 case .character(let c): c
@@ -62,6 +72,7 @@ private indirect enum TrieNode {
                     // it as an invalid match.
                     switch state.resolvedAny1 {
                     case .character(let c): c
+                    case .key(let intention, _): intention
                     case .compositionSeparator, nil: nil
                     }
                 }
@@ -113,7 +124,7 @@ struct InputTable: Sendable {
             }
             return results
         }()
-        var root: TrieNode = .node(output: nil, charChildren: [:], separatorChild: nil, any1Child: nil)
+        var root: TrieNode = .node(output: nil, charChildren: [:], separatorChild: nil, any1Child: nil, keyChildren: [:])
         for (key, value) in pieceHiraganaChanges {
             root.add(reversedKey: key.reversed().map { $0 }, output: value)
         }
@@ -131,20 +142,23 @@ struct InputTable: Sendable {
     private let trieRoot: TrieNode
 
     // Helper: return the child node for `elem`, if it exists.
-    private static func childPiece(of node: TrieNode, _ piece: InputPiece) -> TrieNode? {
+    private static func childCharacter(of node: TrieNode, _ c: Character) -> TrieNode? {
+        switch node { case .node(_, let charChildren, _, _, _): return charChildren[c] }
+    }
+
+    private static func childSeparator(of node: TrieNode) -> TrieNode? {
+        switch node { case .node(_, _, let separatorChild, _, _): return separatorChild }
+    }
+
+    private static func childKey(of node: TrieNode, intention: Character?, modifiers: Set<InputPiece.Modifier>) -> TrieNode? {
         switch node {
-        case .node(_, let charChildren, let separatorChild, _):
-            switch piece {
-            case .character(let c): charChildren[c]
-            case .compositionSeparator: separatorChild
-            }
+        case .node(_, _, _, _, let keyChildren):
+            return keyChildren[.init(intention: intention, modifiers: modifiers)]
         }
     }
 
     private static func childAny1(of node: TrieNode) -> TrieNode? {
-        switch node {
-        case .node(_, _, _, let any1Child): any1Child
-        }
+        switch node { case .node(_, _, _, let any1Child, _): return any1Child }
     }
 
     // Non-recursive DFS: prefer concrete edge; then try `.any1` fallback.
@@ -156,9 +170,27 @@ struct InputTable: Sendable {
             var state: TrieNode.State
             var depth: Int
             var any1: Int
+            var keyExact: Int
         }
-        var best: (node: TrieNode, state: TrieNode.State, depth: Int, any1: Int)?
+        var best: (node: TrieNode, state: TrieNode.State, depth: Int, any1: Int, keyExact: Int)?
 
+        @inline(__always) func
+        better(_ cand: (depth: Int, any1: Int, keyExact: Int), than cur: (depth: Int, any1: Int, keyExact: Int)?) -> Bool {
+            guard let cur else {
+                return true
+            }
+            // Compare by: depth (max), fewer any1, more keyExact
+            return cand.depth > cur.depth || (cand.depth == cur.depth && (cand.any1 < cur.any1 || (cand.any1 == cur.any1 && cand.keyExact > cur.keyExact)))
+        }
+        @inline(__always)
+        func consider(_ node: TrieNode, _ state: TrieNode.State, _ depth: Int, _ any1: Int, _ keyExact: Int, _ stack: inout [Frame]) {
+            if node.hasOutput {
+                if better((depth: depth, any1: any1, keyExact: keyExact), than: best.map { (depth: $0.depth, any1: $0.any1, keyExact: $0.keyExact) }) {
+                    best = (node, state, depth, any1, keyExact)
+                }
+            }
+            stack.append(.init(node: node, state: state, depth: depth, any1: any1, keyExact: keyExact))
+        }
         @inline(__always)
         func pieceAt(_ depth: Int) -> InputPiece? {
             if depth == 0 {
@@ -171,22 +203,31 @@ struct InputTable: Sendable {
             return .character(buffer[idx])
         }
 
-        var stack: [Frame] = [Frame(node: root, state: .init(), depth: 0, any1: 0)]
+        var stack: [Frame] = [.init(node: root, state: .init(), depth: 0, any1: 0, keyExact: 0)]
         stack.reserveCapacity(max(2, maxKeyCount))
 
         while let top = stack.popLast() {
             guard top.depth < maxKeyCount, let piece = pieceAt(top.depth) else {
                 continue
             }
-
-            // 1) Concrete edge (preferred)
-            if let next = childPiece(of: top.node, piece) {
-                if next.hasOutput {
-                    if best == nil || top.depth + 1 > best!.depth || (top.depth + 1 == best!.depth && top.any1 < best!.any1) {
-                        best = (next, top.state, top.depth + 1, top.any1)
-                    }
+            // 1) Concrete edges
+            switch piece {
+            case .character(let c):
+                if let next = childCharacter(of: top.node, c) {
+                    consider(next, top.state, top.depth + 1, top.any1, top.keyExact, &stack)
                 }
-                stack.append(Frame(node: next, state: top.state, depth: top.depth + 1, any1: top.any1))
+            case .compositionSeparator:
+                if let next = childSeparator(of: top.node) {
+                    consider(next, top.state, top.depth + 1, top.any1, top.keyExact, &stack)
+                }
+            case .key(let intention, let modifiers):
+                // push fallback first, then exact key (LIFO → key explored first)
+                if let c = intention, let next = childCharacter(of: top.node, c) {
+                    consider(next, top.state, top.depth + 1, top.any1, top.keyExact, &stack)
+                }
+                if let next = childKey(of: top.node, intention: intention, modifiers: modifiers) {
+                    consider(next, top.state, top.depth + 1, top.any1, top.keyExact + 1, &stack)
+                }
             }
 
             // 2) `.any1` fallback (only if compatible)
@@ -195,12 +236,7 @@ struct InputTable: Sendable {
                 if newState.resolvedAny1 == nil {
                     newState.resolvedAny1 = piece
                 }
-                if nextAny.hasOutput {
-                    if best == nil || top.depth + 1 > best!.depth || (top.depth + 1 == best!.depth && top.any1 + 1 < best!.any1) {
-                        best = (nextAny, newState, top.depth + 1, top.any1 + 1)
-                    }
-                }
-                stack.append(Frame(node: nextAny, state: newState, depth: top.depth + 1, any1: top.any1 + 1))
+                consider(nextAny, newState, top.depth + 1, top.any1 + 1, top.keyExact, &stack)
             }
         }
 
@@ -231,6 +267,12 @@ struct InputTable: Sendable {
             return currentText + [ch]
         case .compositionSeparator:
             return currentText
+        case .key(let intention, _):
+            if let ch = intention {
+                return currentText + [ch]
+            } else {
+                return currentText
+            }
         }
     }
 
@@ -258,6 +300,10 @@ struct InputTable: Sendable {
             buffer.append(ch)
         case .compositionSeparator:
             break
+        case .key(let intention, _):
+            if let ch = intention {
+                buffer.append(ch)
+            }
         }
         return 0
     }

@@ -24,7 +24,8 @@ extension KanaKanjiConverter {
             composingCount: .inputCount(inputData.input.count),
             lastMid: MIDData.一般.mid,
             data: [DicdataElement(word: $0, ruby: string, cid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -15)]
-        )]} ?? []
+        )]
+        } ?? []
     }
 
     /// 和暦で書かれた入力を西暦に変換する関数
@@ -166,7 +167,6 @@ extension KanaKanjiConverter {
                 makeResult0("明治元年"),
                 makeResult1("慶應4年")
             ]
-
         }
         if (1990...2018).contains(seireki) {
             let i = seireki - 1988
@@ -200,5 +200,4 @@ extension KanaKanjiConverter {
         }
         return []
     }
-
 }

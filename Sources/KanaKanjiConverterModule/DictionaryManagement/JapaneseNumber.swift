@@ -100,14 +100,12 @@ private enum JapaneseNumber {
             return ""
         }
     }
-
 }
 
 private enum Number {
     case Zero, One, Two, Three, Four, Five, Six, Seven, Eight, Nine
     var character: Character {
         switch self {
-
         case .Zero:
             return "0"
         case .One:
@@ -405,11 +403,9 @@ extension DicdataStore {
             }
         }
         return result
-
     }
 
     func getJapaneseNumberDicdata(head: String) -> [DicdataElement] {
-
         let tokens = parseLiteral(input: head)
 
         if !tokens.allSatisfy({$0 != .エラー}) {
@@ -452,5 +448,4 @@ extension DicdataStore {
             DicdataElement(word: roman, ruby: head, cid: CIDData.数.cid, mid: MIDData.数.mid, value: -16 + 4 / PValue(roman.count))
         ]
     }
-
 }

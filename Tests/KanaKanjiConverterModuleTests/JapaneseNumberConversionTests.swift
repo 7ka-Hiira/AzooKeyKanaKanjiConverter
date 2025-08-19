@@ -11,7 +11,7 @@ import XCTest
 
 final class JapaneseNumberConversionTests: XCTestCase {
     func testJapaneseNumberConversion() throws {
-        let dicdataStore = DicdataStore()
+        let dicdataStore = DicdataStore(dictionaryURL: URL(fileURLWithPath: ""))
         do {
             let result = dicdataStore.getJapaneseNumberDicdata(head: "イチマン")
             XCTAssertEqual(result.count, 2)

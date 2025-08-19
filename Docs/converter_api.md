@@ -1,38 +1,54 @@
 #  KanaKanjiConverter API
 
-KanaKanjiConverterのインスタンスに対して利用できるいくつかのAPIを示します。
+KanaKanjiConverterの主要APIを示します。以下の例ではデフォルト辞書版を利用しています。
 
-## `setKeyboardLanguage`
+```swift
+import KanaKanjiConverterModuleWithDefaultDictionary
+let converter = KanaKanjiConverter.withDefaultDictionary()
+```
+なお、`KanaKanjiConverter.withDefaultDictionary(preloadDictionary: true)`とすることでメモリを大きく消費する代わりに辞書データをすべて読み込んだ状態になります。
+## `setKeyboardLanguage(_:)`
 
-これから入力しようとしている言語を設定します。このAPIを呼ぶのは必須ではありません。
+これから入力しようとしている言語を設定します。このAPIは日本語/英語をサポートするアプリケーションでは必須です。
+なお、AzooKeyKanaKanjiConverterは通常デフォルトで日本語の設定となっています。英語入力への切り替えの際、ユーザの入力より先にこの関数を呼び出すことでデータがプリロードされ、応答性が向上する可能性があります。
 
-英語入力の場合、この関数を入力開始前に呼ぶことで事前に必要なデータをロードすることができるため、ユーザ体験が向上する可能性があります。
+## 辞書・学習関連のAPI
 
-## `sendToDicdataStore`
+### `importDynamicUserDictionary(_:)`
+動的ユーザ辞書を登録します。`DicdataElement` の配列を直接渡します。
 
-辞書データに関する情報を追加します。
-
-### `importDynamicUserDict`
-
-動的ユーザ辞書を登録します。`DicdataElement`構造体の配列を直接渡します。
-
-```Swift
-converter.sendToDicdataStore(.importDynamicUserDict([
+```swift
+converter.importDynamicUserDictionary([
     DicdataElement(word: "anco", ruby: "アンコ", cid: 1288, mid: 501, value: -5),
-]))
+])
+```
+`ruby` はカタカナで指定してください。`value` は `-5`〜`-10` 程度が目安です。
+
+### `updateUserDictionaryURL(_:)`
+ユーザ辞書（`user.louds*` 等）が置かれているディレクトリURLを更新します。
+
+```swift
+converter.updateUserDictionaryURL(documents)
 ```
 
-`ruby`には読みを指定します。カタカナで指定してください。 `cid`はIPADIC品詞ID、`mid`は「501」としてください。`value`は`-5`から`-10`程度の範囲で設定してください。小さい値ほど変換されにくくなります。
+### `updateLearningConfig(_:)`
+学習設定を更新します。
 
-### `forgetMemory`
+```swift
+converter.updateLearningConfig(
+    LearningConfig(learningType: .inputAndOutput, maxMemoryCount: 65536, memoryURL: documents)
+)
+```
 
-特定の`Candidate`を渡すと、その`Candidate`に含まれている学習データを全てリセットします。
+### `updateLearningData(_:)`, `commitUpdateLearningData()`, `resetMemory()`
+確定候補に基づく学習データを反映・保存・リセットします。
 
-## `setCompletedData`
+```swift
+converter.updateLearningData(candidate)
+converter.commitUpdateLearningData()   // 永続化
+// 全学習のリセット
+converter.resetMemory()
+```
 
-prefixとして確定された候補を与えてください。
-
-## `updateLearningData`
-
-確定された候補を与えると、学習を更新します。
-
+### `stopComposition()`
+内部状態のキャッシュをリセットします。入力の区切りで呼ぶと安定します。

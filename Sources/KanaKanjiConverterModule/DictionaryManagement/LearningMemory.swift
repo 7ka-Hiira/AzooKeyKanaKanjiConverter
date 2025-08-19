@@ -322,9 +322,7 @@ struct LongTermLearningMemory {
         }
 
         let header = Data(bytes: headerArray, count: MemoryLayout<UInt32>.size * headerArray.count)
-        let binary = count + header + body
-
-        return binary
+        return count + header + body
     }
 
     enum UpdateError: Error {
@@ -621,6 +619,12 @@ struct TemporalLearningMemoryTrie {
     }
 }
 
+public struct LearningConfig: Sendable, Equatable {
+    var learningType: LearningType = .nothing
+    var maxMemoryCount: Int = 0
+    var memoryURL: URL?
+}
+
 final class LearningManager {
     private static func updateChar2Int8(bundleURL: URL, target: inout [Character: UInt8]) {
         do {
@@ -631,7 +635,7 @@ final class LearningManager {
             debug("Error: louds/charID.chidが存在しません。このエラーは深刻ですが、テスト時には無視できる場合があります。Description: \(error)")
         }
     }
-    var char2UInt8: [Character: UInt8] = [:]
+    var char2UInt8: [Character: UInt8]
 
     static var today: UInt16 {
         UInt16(Int(Date().timeIntervalSince1970) / 86400) - 19000
@@ -651,84 +655,77 @@ final class LearningManager {
     }
 
     private var temporaryMemory: TemporalLearningMemoryTrie = .init()
-    private var options: ConvertRequestOptions?
+    private var options_: ConvertRequestOptions?
+    private(set) var config = LearningConfig()
     private var memoryCollapsed: Bool = false
 
     var enabled: Bool {
-        if let options {
-            (!self.memoryCollapsed) && options.learningType.needUsingMemory
-        } else {
-            false
-        }
+        (!self.memoryCollapsed) && config.learningType.needUsingMemory
     }
 
-    init() {}
+    init(dictionaryURL: URL) {
+        self.char2UInt8 = [:]
+        Self.updateChar2Int8(bundleURL: dictionaryURL, target: &self.char2UInt8)
+    }
 
     /// - Returns: Whether cache should be reseted or not.
-    func setRequestOptions(_ newOptions: ConvertRequestOptions) -> Bool {
+    func updateConfig(_ newConfig: LearningConfig) -> Bool {
         // 更新の必要がなければ何もしない
-        if !newOptions.learningType.needUsingMemory {
-            self.options = newOptions
+        if !newConfig.learningType.needUsingMemory {
+            self.config = newConfig
             return false
         }
-        // 変更があったら`char2Int8`を読み込み直す
-        if newOptions.dictionaryResourceURL != self.options?.dictionaryResourceURL {
-            Self.updateChar2Int8(bundleURL: newOptions.dictionaryResourceURL, target: &self.char2UInt8)
-        }
         // ここで更新
-        self.options = newOptions
+        self.config = newConfig
 
         // 学習の壊れ状態を確認
-        self.memoryCollapsed = LongTermLearningMemory.memoryCollapsed(directoryURL: newOptions.memoryDirectoryURL)
-        if self.memoryCollapsed && newOptions.learningType.needUsingMemory {
+        guard let memoryURL = newConfig.memoryURL else {
+            debug(#function, "memoryURL is nil")
+            return false
+        }
+        self.memoryCollapsed = LongTermLearningMemory.memoryCollapsed(directoryURL: memoryURL)
+        if self.memoryCollapsed && newConfig.learningType.needUsingMemory {
             do {
                 try LongTermLearningMemory.merge(
                     tempTrie: TemporalLearningMemoryTrie(),
-                    directoryURL: newOptions.memoryDirectoryURL,
-                    maxMemoryCount: newOptions.maxMemoryCount,
+                    directoryURL: memoryURL,
+                    maxMemoryCount: newConfig.maxMemoryCount,
                     char2UInt8: self.char2UInt8
                 )
             } catch {
                 debug(#file, #function, "automatic merge failed", error)
             }
-            self.memoryCollapsed = LongTermLearningMemory.memoryCollapsed(directoryURL: newOptions.memoryDirectoryURL)
+            self.memoryCollapsed = LongTermLearningMemory.memoryCollapsed(directoryURL: memoryURL)
         }
         if self.memoryCollapsed {
             // 学習データが壊れている状態であることを警告する
             debug(#file, #function, "LearningManager init: Memory Collapsed")
         }
 
-        switch self.options!.learningType {
+        switch newConfig.learningType {
         case .inputAndOutput, .onlyOutput: break
         case .nothing:
             self.temporaryMemory = TemporalLearningMemoryTrie()
-        }
-
-        // リセットチェックも実施
-        if self.options!.shouldResetMemory {
-            self.reset()
-            self.options!.shouldResetMemory = false
-            return true
         }
         return false
     }
 
     func temporaryPerfectMatch(charIDs: [UInt8]) -> [DicdataElement] {
-        guard let options, options.learningType.needUsingMemory else {
+        guard self.config.learningType.needUsingMemory else {
             return []
         }
         return self.temporaryMemory.perfectMatch(chars: charIDs)
     }
 
     func movingTowardPrefixSearchOnTemporaryMemory(charIDs: [UInt8], depth: Range<Int> = 0 ..< .max) -> (dicdata: [Int: [DicdataElement]], availableMaxIndex: Int) {
-        guard let options, options.learningType.needUsingMemory else {
+        guard self.config.learningType.needUsingMemory else {
             return ([:], 0)
         }
         return self.temporaryMemory.movingTowardPrefixSearch(chars: charIDs, depth: depth)
     }
 
     func temporaryPrefixMatch(charIDs: [UInt8]) -> [DicdataElement] {
-        guard let options, options.learningType.needUsingMemory else {
+        guard self.config.learningType.needUsingMemory else {
             return []
         }
         return self.temporaryMemory.prefixMatch(chars: charIDs)
@@ -740,7 +737,7 @@ final class LearningManager {
 
     /// `updatePart`のみを更新する。`data`の部分は更新しない。
     func update(data: [DicdataElement], updatePart: [DicdataElement]) {
-        guard let options, options.learningType.needUpdateMemory else {
+        guard self.config.learningType.needUpdateMemory else {
             return
         }
         // 単語単位
@@ -848,7 +845,7 @@ final class LearningManager {
 
     /// データに含まれる語彙の学習をリセットする関数
     func forgetMemory(data: [DicdataElement]) {
-        guard let options, options.learningType.needUpdateMemory else {
+        guard self.config.learningType.needUpdateMemory else {
             return
         }
         // 1. temporary memoryを削除する
@@ -858,9 +855,13 @@ final class LearningManager {
             }
             self.temporaryMemory.forget(dicdataElement: element, chars: chars)
         }
+        guard let memoryURL = config.memoryURL else {
+            debug(#function, "memoryURL is nil")
+            return
+        }
         // 2. longterm memoryを削除する
         do {
-            try LongTermLearningMemory.merge(tempTrie: self.temporaryMemory, forgetTargets: data, directoryURL: options.memoryDirectoryURL, maxMemoryCount: options.maxMemoryCount, char2UInt8: char2UInt8)
+            try LongTermLearningMemory.merge(tempTrie: self.temporaryMemory, forgetTargets: data, directoryURL: memoryURL, maxMemoryCount: self.config.maxMemoryCount, char2UInt8: char2UInt8)
             // マージが済んだので、temporaryMemoryを空にする
             self.temporaryMemory = TemporalLearningMemoryTrie()
         } catch {
@@ -868,16 +869,17 @@ final class LearningManager {
             debug("LearningManager resetLearning: Failed to save LongTermLearningMemory", error)
         }
         // 状態を更新する
-        self.memoryCollapsed = LongTermLearningMemory.memoryCollapsed(directoryURL: options.memoryDirectoryURL)
+        self.memoryCollapsed = LongTermLearningMemory.memoryCollapsed(directoryURL: memoryURL)
     }
 
     func save() {
-        guard let options, options.learningType.needUpdateMemory else {
-            debug(#function, "options.learningType=\(options?.learningType as _?)", "skip memory update")
+        guard self.config.learningType.needUpdateMemory,
+              let memoryURL = config.memoryURL else {
+            debug(#function, "config.learningType=\(self.config.learningType as _?)", "skip memory update")
             return
         }
         do {
-            try LongTermLearningMemory.merge(tempTrie: self.temporaryMemory, directoryURL: options.memoryDirectoryURL, maxMemoryCount: options.maxMemoryCount, char2UInt8: char2UInt8)
+            try LongTermLearningMemory.merge(tempTrie: self.temporaryMemory, directoryURL: memoryURL, maxMemoryCount: self.config.maxMemoryCount, char2UInt8: char2UInt8)
             // マージが済んだので、temporaryMemoryを空にする
             self.temporaryMemory = TemporalLearningMemoryTrie()
         } catch {
@@ -885,16 +887,17 @@ final class LearningManager {
             debug("LearningManager save: Failed to save LongTermLearningMemory", error)
         }
         // 状態を更新する
-        self.memoryCollapsed = LongTermLearningMemory.memoryCollapsed(directoryURL: options.memoryDirectoryURL)
+        self.memoryCollapsed = LongTermLearningMemory.memoryCollapsed(directoryURL: memoryURL)
     }
 
-    func reset() {
-        guard let options else {
+    func resetMemory() {
+        self.temporaryMemory = TemporalLearningMemoryTrie()
+        guard let memoryURL = config.memoryURL else {
+            debug(#function, "memoryURL is nil")
             return
         }
-        self.temporaryMemory = TemporalLearningMemoryTrie()
         do {
-            try LongTermLearningMemory.reset(directoryURL: options.memoryDirectoryURL)
+            try LongTermLearningMemory.reset(directoryURL: memoryURL)
         } catch {
             debug("LearningManager reset failed", error)
         }

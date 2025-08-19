@@ -114,7 +114,7 @@ public struct TextReplacer: Sendable {
         }
     }
 
-    public func getReplacementCandidate(left: String, center: String, right: String, target: [ConverterBehaviorSemantics.ReplacementTarget]) -> [ReplacementCandidate] {
+    public func getReplacementCandidate(left: String, center: String, right _: String, target: [ConverterBehaviorSemantics.ReplacementTarget]) -> [ReplacementCandidate] {
         var results: [ReplacementCandidate] = []
         if target.contains(.emoji) {
             if center.count == 1, let item = self.emojiGroups.first(where: {$0.all.contains(center)}) {

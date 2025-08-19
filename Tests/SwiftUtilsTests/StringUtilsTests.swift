@@ -10,7 +10,6 @@
 import XCTest
 
 final class StringTests: XCTestCase {
-
     func testIsKana() throws {
         XCTAssertTrue("あ".isKana)
         XCTAssertTrue("ぁ".isKana)

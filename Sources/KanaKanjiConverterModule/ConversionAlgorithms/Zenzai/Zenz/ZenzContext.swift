@@ -272,8 +272,7 @@ final class ZenzContext {
         // Heapからソートして結果を取り出す
         let cchars: [CChar] = prompt_tokens.dropFirst(initial_count).flatMap(self.token_to_piece)
         let data = Data(cchars.map { UInt8(bitPattern: $0) })
-        let result: String = String(data: data, encoding: .utf8) ?? ""
-        return result
+        return String(data: data, encoding: .utf8) ?? "" as String
     }
 
     func predict_next_character(leftSideContext: String, count: Int) -> [(character: Character, value: Float)] {
@@ -379,13 +378,13 @@ final class ZenzContext {
         case .v1: ""
         case .v2(let mode):
             if let leftSideContext = mode.leftSideContext {
-                String(leftSideContext.suffix(40))
+                String(leftSideContext.suffix(mode.maxLeftSideContextLength ?? 40))
             } else {
                 ""
             }
         case .v3(let mode):
             if let leftSideContext = mode.leftSideContext {
-                String(leftSideContext.suffix(40))
+                String(leftSideContext.suffix(mode.maxLeftSideContextLength ?? 40))
             } else {
                 ""
             }

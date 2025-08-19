@@ -76,8 +76,7 @@ public struct TemplateData: Codable, Sendable {
         do {
             let url = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false).appendingPathComponent(Self.dataFileName)
             let json = try Data(contentsOf: url)
-            let saveData = try JSONDecoder().decode([TemplateData].self, from: json)
-            return saveData
+            return try JSONDecoder().decode([TemplateData].self, from: json)
         } catch {
             debug("TemplateData.load", error)
             return [
@@ -160,7 +159,7 @@ public struct DateTemplateLiteral: TemplateLiteralProtocol, Equatable, Sendable 
         return formatter.string(from: Date().advanced(by: Double((Int(delta) ?? 0) * deltaUnit)))
     }
 
-    public static func `import`(from string: String, escaped: Bool = false) -> DateTemplateLiteral {
+    public static func `import`(from string: String, escaped _: Bool = false) -> DateTemplateLiteral {
         let splited = string.split(separator: " ")
         let format = parse(splited: splited, key: "format")
         let type = parse(splited: splited, key: "type")
@@ -237,7 +236,7 @@ public struct RandomTemplateLiteral: TemplateLiteralProtocol, Equatable, Sendabl
         }
     }
 
-    public static func `import`(from string: String, escaped: Bool = false) -> RandomTemplateLiteral {
+    public static func `import`(from string: String, escaped _: Bool = false) -> RandomTemplateLiteral {
         let splited = string.split(separator: " ")
         let type = parse(splited: splited, key: "type")
         let valueString = parse(splited: splited, key: "value").templateDataSpecificUnescaped()
@@ -262,5 +261,4 @@ public struct RandomTemplateLiteral: TemplateLiteralProtocol, Equatable, Sendabl
         <random type="\(value.type.rawValue)" value="\(value.string.templateDataSpecificEscaped())">
         """
     }
-
 }

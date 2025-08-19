@@ -19,13 +19,11 @@ final class DicdataStoreTests: XCTestCase {
     }
 
     func requestOptions() -> ConvertRequestOptions {
-        .withDefaultDictionary(
+        .init(
             N_best: 5,
             requireJapanesePrediction: true,
             requireEnglishPrediction: false,
             keyboardLanguage: .ja_JP,
-            typographyLetterCandidate: false,
-            unicodeCandidate: true,
             englishCandidateInRoman2KanaInput: true,
             fullWidthRomanCandidate: false,
             halfWidthKanaCandidate: false,
@@ -34,6 +32,8 @@ final class DicdataStoreTests: XCTestCase {
             shouldResetMemory: false,
             memoryDirectoryURL: URL(fileURLWithPath: ""),
             sharedContainerURL: URL(fileURLWithPath: ""),
+            textReplacer: .empty,
+            specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders,
             metadata: nil
         )
     }
@@ -41,7 +41,7 @@ final class DicdataStoreTests: XCTestCase {
     /// 絶対に変換できるべき候補をここに記述する
     ///  - 主に「変換できない」と報告のあった候補を追加する
     func testMustWords() throws {
-        let dicdataStore = DicdataStore(convertRequestOptions: requestOptions())
+        let dicdataStore = DicdataStore.withDefaultDictionary()
         let mustWords = [
             ("アサッテ", "明後日"),
             ("オトトシ", "一昨年"),
@@ -130,7 +130,13 @@ final class DicdataStoreTests: XCTestCase {
         for (key, word) in mustWords {
             var c = ComposingText()
             c.insertAtCursorPosition(key, inputStyle: .direct)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex), needTypoCorrection: false)
+            let result = dicdataStore.lookupDicdata(
+                composingText: c,
+                inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex),
+                surfaceRange: (0, c.convertTarget.count - 1 ..< c.convertTarget.count),
+                needTypoCorrection: false,
+                state: dicdataStore.prepareState()
+            )
             // 冗長な書き方だが、こうすることで「どの項目でエラーが発生したのか」がはっきりするため、こう書いている。
             XCTAssertEqual(result.first(where: {$0.data.word == word})?.data.word, word)
         }
@@ -139,7 +145,7 @@ final class DicdataStoreTests: XCTestCase {
     /// 入っていてはおかしい候補をここに記述する
     ///  - 主に以前混入していたが取り除いた語を記述する
     func testMustNotWords() throws {
-        let dicdataStore = DicdataStore(convertRequestOptions: requestOptions())
+        let dicdataStore = DicdataStore.withDefaultDictionary()
         let mustWords = [
             ("タイ", "体."),
             ("アサッテ", "明日"),
@@ -151,14 +157,20 @@ final class DicdataStoreTests: XCTestCase {
         for (key, word) in mustWords {
             var c = ComposingText()
             c.insertAtCursorPosition(key, inputStyle: .direct)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex), needTypoCorrection: false)
+            let result = dicdataStore.lookupDicdata(
+                composingText: c,
+                inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex),
+                surfaceRange: (0, c.convertTarget.count - 1 ..< c.convertTarget.count),
+                needTypoCorrection: false,
+                state: dicdataStore.prepareState()
+            )
             XCTAssertNil(result.first(where: {$0.data.word == word && $0.data.ruby == key}))
         }
     }
 
     /// 入力誤りを確実に修正できてほしい語群
     func testMustCorrectTypo() throws {
-        let dicdataStore = DicdataStore(convertRequestOptions: requestOptions())
+        let dicdataStore = DicdataStore.withDefaultDictionary()
         let mustWords = [
             ("タイカクセイ", "大学生"),
             ("シヨック", "ショック"),
@@ -171,14 +183,20 @@ final class DicdataStoreTests: XCTestCase {
         for (key, word) in mustWords {
             var c = ComposingText()
             c.insertAtCursorPosition(key, inputStyle: .direct)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex), needTypoCorrection: true)
+            let result = dicdataStore.lookupDicdata(
+                composingText: c,
+                inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex),
+                surfaceRange: (0, c.convertTarget.count - 1 ..< c.convertTarget.count),
+                needTypoCorrection: true,
+                state: dicdataStore.prepareState()
+            )
             XCTAssertEqual(result.first(where: {$0.data.word == word})?.data.word, word)
         }
     }
 
     /// 入力誤りを確実に修正できてほしい語群
     func testMustCorrectTypoRoman2Kana() throws {
-        let dicdataStore = DicdataStore(convertRequestOptions: requestOptions())
+        let dicdataStore = DicdataStore.withDefaultDictionary()
         let mustWords = [
             ("tskamatsu", "高松"),  // ts -> タ
             ("kitsmura", "北村")  // ts -> タ
@@ -186,17 +204,23 @@ final class DicdataStoreTests: XCTestCase {
         for (key, word) in mustWords {
             var c = ComposingText()
             c.insertAtCursorPosition(key, inputStyle: .roman2kana)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex), needTypoCorrection: true)
+            let result = dicdataStore.lookupDicdata(
+                composingText: c,
+                inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex),
+                surfaceRange: (0, c.convertTarget.count - 1 ..< c.convertTarget.count),
+                needTypoCorrection: true,
+                state: dicdataStore.prepareState()
+            )
             XCTAssertEqual(result.first(where: {$0.data.word == word})?.data.word, word)
         }
     }
 
     func testLookupDicdata() throws {
-        let dicdataStore = DicdataStore(convertRequestOptions: requestOptions())
+        let dicdataStore = DicdataStore.withDefaultDictionary()
         do {
             var c = ComposingText()
             c.insertAtCursorPosition("ヘンカン", inputStyle: .roman2kana)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, 2 ..< 4))
+            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, 2 ..< 4), state: dicdataStore.prepareState())
             XCTAssertFalse(result.contains(where: {$0.data.word == "変"}))
             XCTAssertTrue(result.contains(where: {$0.data.word == "変化"}))
             XCTAssertTrue(result.contains(where: {$0.data.word == "変換"}))
@@ -204,7 +228,7 @@ final class DicdataStoreTests: XCTestCase {
         do {
             var c = ComposingText()
             c.insertAtCursorPosition("ヘンカン", inputStyle: .roman2kana)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, 0..<4))
+            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, 0..<4), state: dicdataStore.prepareState())
             XCTAssertTrue(result.contains(where: {$0.data.word == "変"}))
             XCTAssertTrue(result.contains(where: {$0.data.word == "変化"}))
             XCTAssertTrue(result.contains(where: {$0.data.word == "変換"}))
@@ -212,42 +236,42 @@ final class DicdataStoreTests: XCTestCase {
         do {
             var c = ComposingText()
             c.insertAtCursorPosition("ツカッ", inputStyle: .roman2kana)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, 2..<3))
+            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, 2..<3), state: dicdataStore.prepareState())
             XCTAssertTrue(result.contains(where: {$0.data.word == "使っ"}))
         }
         do {
             var c = ComposingText()
             c.insertAtCursorPosition("ツカッt", inputStyle: .roman2kana)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, 2..<4))
+            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, 2..<4), state: dicdataStore.prepareState())
             XCTAssertTrue(result.contains(where: {$0.data.word == "使っ"}))
         }
         do {
             var c = ComposingText()
             sequentialInput(&c, sequence: "tukatt", inputStyle: .roman2kana)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, 4..<6))
+            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, 4..<6), state: dicdataStore.prepareState())
             XCTAssertFalse(result.contains(where: {$0.data.word == "使っ"}))
         }
         do {
             var c = ComposingText()
             sequentialInput(&c, sequence: "tukatt", inputStyle: .roman2kana)
-            let result = dicdataStore.lookupDicdata(composingText: c, surfaceRange: (0, nil))
+            let result = dicdataStore.lookupDicdata(composingText: c, surfaceRange: (0, nil), state: dicdataStore.prepareState())
             XCTAssertTrue(result.contains(where: {$0.data.word == "使っ"}))
         }
     }
 
     func testWiseDicdata() throws {
-        let dicdataStore = DicdataStore(convertRequestOptions: requestOptions())
+        let dicdataStore = DicdataStore.withDefaultDictionary()
         do {
             var c = ComposingText()
             c.insertAtCursorPosition("999999999999", inputStyle: .roman2kana)
-            let result = dicdataStore.getWiseDicdata(convertTarget: c.convertTarget, surfaceRange: 0..<12, fullText: Array(c.convertTarget.toKatakana()))
+            let result = dicdataStore.getWiseDicdata(convertTarget: c.convertTarget, surfaceRange: 0..<12, fullText: Array(c.convertTarget.toKatakana()), keyboardLanguage: .ja_JP)
             XCTAssertTrue(result.contains(where: {$0.word == "999999999999"}))
             XCTAssertTrue(result.contains(where: {$0.word == "九千九百九十九億九千九百九十九万九千九百九十九"}))
         }
     }
 
     func testDynamicUserDict() throws {
-        let dicdataStore = DicdataStore(convertRequestOptions: requestOptions())
+        let dicdataStore = DicdataStore.withDefaultDictionary()
 
         // 動的ユーザ辞書を設定
         let testDynamicUserDict = [
@@ -255,11 +279,12 @@ final class DicdataStoreTests: XCTestCase {
             DicdataElement(word: "カスタム変換", ruby: "カスタムヘンカン", lcid: CIDData.固有名詞.cid, rcid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -12),
             DicdataElement(word: "動的辞書", ruby: "ドウテキジショ", lcid: CIDData.固有名詞.cid, rcid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -11)
         ]
-        dicdataStore.sendToDicdataStore(.importDynamicUserDict(testDynamicUserDict))
+        let state = dicdataStore.prepareState()
+        state.importDynamicUserDictionary(testDynamicUserDict)
 
         // 完全一致テスト
         do {
-            let result = dicdataStore.getMatchDynamicUserDict("テストタンゴ")
+            let result = dicdataStore.getMatchDynamicUserDict("テストタンゴ", state: state)
             XCTAssertEqual(result.count, 1)
             XCTAssertEqual(result.first?.word, "テスト単語")
             XCTAssertEqual(result.first?.ruby, "テストタンゴ")
@@ -267,7 +292,7 @@ final class DicdataStoreTests: XCTestCase {
 
         // 前方一致テスト
         do {
-            let result = dicdataStore.getPrefixMatchDynamicUserDict("カスタム")
+            let result = dicdataStore.getPrefixMatchDynamicUserDict("カスタム", state: state)
             XCTAssertEqual(result.count, 1)
             XCTAssertEqual(result.first?.word, "カスタム変換")
             XCTAssertEqual(result.first?.ruby, "カスタムヘンカン")
@@ -277,7 +302,13 @@ final class DicdataStoreTests: XCTestCase {
         do {
             var c = ComposingText()
             c.insertAtCursorPosition("テストタンゴ", inputStyle: .direct)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex), needTypoCorrection: false)
+            let result = dicdataStore.lookupDicdata(
+                composingText: c,
+                inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex),
+                surfaceRange: (0, c.convertTarget.count - 1 ..< c.convertTarget.count),
+                needTypoCorrection: false,
+                state: state
+            )
             XCTAssertTrue(result.contains(where: {$0.data.word == "テスト単語"}))
         }
 
@@ -285,26 +316,33 @@ final class DicdataStoreTests: XCTestCase {
         do {
             var c = ComposingText()
             c.insertAtCursorPosition("ドウテキジショ", inputStyle: .direct)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex), needTypoCorrection: false)
+            let result = dicdataStore.lookupDicdata(
+                composingText: c,
+                inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex),
+                surfaceRange: (0, c.convertTarget.count - 1 ..< c.convertTarget.count),
+                needTypoCorrection: false,
+                state: state
+            )
             XCTAssertTrue(result.contains(where: {$0.data.word == "動的辞書"}))
         }
 
         // 存在しないエントリのテスト
         do {
-            let result = dicdataStore.getMatchDynamicUserDict("ソンザイシナイ")
+            let result = dicdataStore.getMatchDynamicUserDict("ソンザイシナイ", state: state)
             XCTAssertEqual(result.count, 0)
         }
     }
 
     func testDynamicUserDictWithConversion() throws {
-        let dicdataStore = DicdataStore(convertRequestOptions: requestOptions())
+        let dicdataStore = DicdataStore.withDefaultDictionary()
 
         // 動的ユーザ辞書を設定
         let testDynamicUserDict = [
             DicdataElement(word: "テストワード", ruby: "テストワード", lcid: CIDData.固有名詞.cid, rcid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -8),
             DicdataElement(word: "特殊読み", ruby: "トクシュヨミ", lcid: CIDData.固有名詞.cid, rcid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -9)
         ]
-        dicdataStore.sendToDicdataStore(.importDynamicUserDict(testDynamicUserDict))
+        let state = dicdataStore.prepareState()
+        state.importDynamicUserDictionary(testDynamicUserDict)
 
         // ローマ字入力での変換テスト
         do {
@@ -314,7 +352,8 @@ final class DicdataStoreTests: XCTestCase {
                 composingText: c,
                 inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex),
                 surfaceRange: (0, c.convertTarget.count - 1 ..< c.convertTarget.count),
-                needTypoCorrection: false
+                needTypoCorrection: false,
+                state: state
             )
             XCTAssertTrue(result.contains(where: {$0.data.word == "テストワード"}))
             XCTAssertEqual(result.first(where: {$0.data.word == "テストワード"})?.range, .surface(from: 0, to: 6))
@@ -324,7 +363,13 @@ final class DicdataStoreTests: XCTestCase {
         do {
             var c = ComposingText()
             c.insertAtCursorPosition("トクシュヨミ", inputStyle: .direct)
-            let result = dicdataStore.lookupDicdata(composingText: c, inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex), needTypoCorrection: false)
+            let result = dicdataStore.lookupDicdata(
+                composingText: c,
+                inputRange: (0, c.input.endIndex - 1 ..< c.input.endIndex),
+                surfaceRange: (0, c.convertTarget.count - 1 ..< c.convertTarget.count),
+                needTypoCorrection: false,
+                state: state
+            )
             let dynamicUserDictResult = result.first(where: {$0.data.word == "特殊読み"})
             XCTAssertNotNil(dynamicUserDictResult)
             XCTAssertEqual(dynamicUserDictResult?.data.metadata, .isFromUserDictionary)

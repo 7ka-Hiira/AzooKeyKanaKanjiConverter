@@ -121,8 +121,7 @@ public struct EfficientNGram {
         }
         plf += coef / Double(self.tokenizer.vocabSize)
 
-        let prob = alpha + gamma * plf
-        return prob
+        return alpha + gamma * plf
     }
 
     /// Kneser-Ney の確率を求める
@@ -209,20 +208,20 @@ package func generateText(
 #else
 /// Mock Implementation
 public struct EfficientNGram {
-    public init(baseFilename: String, n: Int, d: Double, tokenizer: ZenzTokenizer) {}
-    public func bulkPredict(_ ngram: some BidirectionalCollection<Int>) -> [Double] {
+    public init(baseFilename _: String, n _: Int, d _: Double, tokenizer _: ZenzTokenizer) {}
+    public func bulkPredict(_: some BidirectionalCollection<Int>) -> [Double] {
         // FIXME: avoid hard-coding
         [Double].init(repeating: 1 / 6000, count: 6000)
     }
 }
 
 package func generateText(
-    inputText: String,
-    mixAlpha: Double,
-    lmBase: EfficientNGram,
-    lmPerson: EfficientNGram,
-    tokenizer: ZenzTokenizer,
-    maxCount: Int = 100
+    inputText _: String,
+    mixAlpha _: Double,
+    lmBase _: EfficientNGram,
+    lmPerson _: EfficientNGram,
+    tokenizer _: ZenzTokenizer,
+    maxCount _: Int = 100
 ) -> String {
     "[Error] Unsupported"
 }

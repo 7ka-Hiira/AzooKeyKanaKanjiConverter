@@ -41,18 +41,34 @@ AzooKeyKanaKanjiConverterの開発については[開発ガイド](Docs/developm
 // デフォルト辞書つきの変換モジュールをインポート
 import KanaKanjiConverterModuleWithDefaultDictionary
 
-// 変換器を初期化する
-let converter = KanaKanjiConverter()
+// 変換器を初期化する（デフォルト辞書を利用）
+let converter = KanaKanjiConverter.withDefaultDictionary()
 // 入力を初期化する
 var c = ComposingText()
 // 変換したい文章を追加する
 c.insertAtCursorPosition("あずーきーはしんじだいのきーぼーどあぷりです", inputStyle: .direct)
 // 変換のためのオプションを指定して、変換を要求
-let results = converter.requestCandidates(c, options: .withDefaultDictionary(...))
+let results = converter.requestCandidates(c, options: .init(
+    N_best: 10,
+    requireJapanesePrediction: true,
+    requireEnglishPrediction: false,
+    keyboardLanguage: .ja_JP,
+    englishCandidateInRoman2KanaInput: true,
+    fullWidthRomanCandidate: false,
+    halfWidthKanaCandidate: false,
+    learningType: .inputAndOutput,
+    maxMemoryCount: 65536,
+    shouldResetMemory: false,
+    memoryDirectoryURL: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!,
+    sharedContainerURL: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!,
+    textReplacer: .withDefaultEmojiDictionary(),
+    specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders,
+    metadata: .init(versionString: "Your App Version X")
+))
 // 結果の一番目を表示
 print(results.mainResults.first!.text)  // azooKeyは新時代のキーボードアプリです
 ```
-`options: .withDefaultDictionary(...)`は、`ConvertRequestOptions`を生成し、変換リクエストに必要な情報を指定します。詳しくはコード内のドキュメントコメントを参照してください。
+`ConvertRequestOptions`は変換リクエストに必要な情報を指定します。詳しくはコード内のドキュメントコメントを参照してください。
 
 
 ### `ConvertRequestOptions`
@@ -62,7 +78,7 @@ print(results.mainResults.first!.text)  // azooKeyは新時代のキーボード
 let documents = FileManager.default
     .urls(for: .documentDirectory, in: .userDomainMask)
     .first!
-let options = ConvertRequestOptions.withDefaultDictionary(
+let options = ConvertRequestOptions(
     // 日本語予測変換
     requireJapanesePrediction: true,
     // 英語予測変換 
@@ -76,7 +92,9 @@ let options = ConvertRequestOptions.withDefaultDictionary(
     // ユーザ辞書データのあるディレクトリのURL（書類フォルダを指定）
     sharedContainerURL: documents,
     // メタデータ
-    metadata: .init(versionString: "You App Version X")
+    metadata: .init(versionString: "Your App Version X"),
+    textReplacer: .withDefaultEmojiDictionary(),
+    specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders
 )
 ```
 
@@ -100,10 +118,18 @@ dependencies: [
 `ConvertRequestOptions`の`zenzaiMode`を指定します。詳しい引数の情報については[ドキュメント](./Docs/zenzai.md)を参照してください。
 
 ```swift
-let options = ConvertRequestOptions.withDefaultDictionary(
+let options = ConvertRequestOptions(
     // ...
-    zenzaiMode: .on(weight: url, inferenceLimit: 10)
-    // ...
+    requireJapanesePrediction: true,
+    requireEnglishPrediction: false,
+    keyboardLanguage: .ja_JP,
+    learningType: .nothing,
+    memoryDirectoryURL: documents,
+    sharedContainerURL: documents,
+    textReplacer: .withDefaultEmojiDictionary(),
+    specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders,
+    zenzaiMode: .on(weight: url, inferenceLimit: 10),
+    metadata: .init(versionString: "Your App Version X")
 )
 ```
 
@@ -140,7 +166,7 @@ AzooKeyKanaKanjiConverterのデフォルト辞書として[azooKey_dictionary_st
 ),
 ```
 
-利用時に、辞書データのディレクトリを明示的に指定する必要があります。
+利用時に、辞書データのディレクトリを明示的に指定する必要があります（オプションではなく、変換器の初期化時に指定します）。
 ```swift
 // デフォルト辞書を含まない変換モジュールを指定
 import KanaKanjiConverterModule
@@ -148,29 +174,24 @@ import KanaKanjiConverterModule
 let documents = FileManager.default
     .urls(for: .documentDirectory, in: .userDomainMask)
     .first!
+// カスタム辞書ディレクトリを指定して変換器を初期化
+let dictionaryURL = Bundle.main.bundleURL.appending(path: "Dictionary", directoryHint: .isDirectory)
+let converter = KanaKanjiConverter(dictionaryURL: dictionaryURL, preloadDictionary: true)
 
+// 変換リクエスト時のオプションを用意
 let options = ConvertRequestOptions(
-    // 日本語予測変換
     requireJapanesePrediction: true,
-    // 英語予測変換 
     requireEnglishPrediction: false,
-    // 入力言語 
     keyboardLanguage: .ja_JP,
-    // 学習タイプ 
-    learningType: .nothing, 
-    // ここが必要
-    // 辞書データのURL（先ほど追加した辞書リソースを指定）
-    dictionaryResourceURL: Bundle.main.bundleURL.appending(path: "Dictionary", directoryHint: .isDirectory),
-    // 学習データを保存するディレクトリのURL（書類フォルダを指定）
+    learningType: .nothing,
     memoryDirectoryURL: documents,
-    // ユーザ辞書データのあるディレクトリのURL（書類フォルダを指定）
     sharedContainerURL: documents,
-    // メタデータ
-    metadata: .init(versionString: "You App Version X")
+    textReplacer: .withDefaultEmojiDictionary(),
+    specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders,
+    metadata: .init(versionString: "Your App Version X")
 )
 ```
-
-`dictionaryResourceURL`のオプションは`KanaKanjiConverterModuleWithDefaultDictionary`モジュールでも利用できますが、バンドルに含まれる辞書リソースが利用されないため、アプリケーションサイズが不必要に大きくなります。デフォルトでない辞書データを利用する場合は`KanaKanjiConverterModule`を利用してください。
+`dictionaryResourceURL` は `ConvertRequestOptions` から廃止されました。デフォルト辞書を使う場合は `KanaKanjiConverterModuleWithDefaultDictionary` を、カスタム辞書を使う場合は `KanaKanjiConverterModule` を利用し、変換器初期化時に辞書ディレクトリを指定してください。
 
 ## SwiftUtils
 Swift一般に利用できるユーティリティのモジュールです。

@@ -241,5 +241,4 @@ public struct Candidate: Sendable {
             data: candidateData
         )
     }
-
 }

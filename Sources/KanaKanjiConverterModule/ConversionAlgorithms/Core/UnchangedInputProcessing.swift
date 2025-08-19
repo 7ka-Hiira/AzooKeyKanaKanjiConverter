@@ -11,7 +11,6 @@ import Foundation
 import SwiftUtils
 
 extension Kana2Kanji {
-
     /// カナを漢字に変換する関数, キャッシュから単に復元する。
     /// - Parameters:
     ///   - N_best: N_best値。
@@ -25,7 +24,7 @@ extension Kana2Kanji {
     ///
     /// (2)次に、返却用ノードを計算する。
 
-    func kana2lattice_no_change(N_best: Int, previousResult: (inputData: ComposingText, lattice: Lattice)) -> (result: LatticeNode, lattice: Lattice) {
+    func kana2lattice_no_change(N_best _: Int, previousResult: (inputData: ComposingText, lattice: Lattice)) -> (result: LatticeNode, lattice: Lattice) {
         debug("キャッシュから復元、元の文字は：", previousResult.inputData.convertTarget)
         let inputCount = previousResult.inputData.input.count
         let surfaceCount = previousResult.inputData.convertTarget.count
@@ -47,5 +46,4 @@ extension Kana2Kanji {
         // (2)
         return (result: result, lattice: previousResult.lattice)
     }
-
 }

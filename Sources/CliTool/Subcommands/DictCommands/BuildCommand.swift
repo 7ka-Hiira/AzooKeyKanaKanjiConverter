@@ -93,7 +93,7 @@ struct CostBuilder {
         do {
             let binaryData = try Data(contentsOf: URL(fileURLWithPath: path), options: [.uncached])
 
-            let ui64array = binaryData.withUnsafeBytes {pointer -> [Float] in
+            return binaryData.withUnsafeBytes {pointer -> [Float] in
                 Array(
                     UnsafeBufferPointer(
                         start: pointer.baseAddress!.assumingMemoryBound(to: Float.self),
@@ -101,7 +101,6 @@ struct CostBuilder {
                     )
                 )
             }
-            return ui64array
         } catch {
             print("Failed to read the file.", error)
             return []
@@ -112,7 +111,7 @@ struct CostBuilder {
         do {
             let binaryData = try Data(contentsOf: URL(fileURLWithPath: path), options: [.uncached])
 
-            let ui64array = binaryData.withUnsafeBytes {pointer -> [(Int16, Float)] in
+            return binaryData.withUnsafeBytes {pointer -> [(Int16, Float)] in
                 Array(
                     UnsafeBufferPointer(
                         start: pointer.baseAddress!.assumingMemoryBound(to: (Int16, Float).self),
@@ -120,7 +119,6 @@ struct CostBuilder {
                     )
                 )
             }
-            return ui64array
         } catch {
             print("Failed to read the file.", error)
             return []
@@ -179,7 +177,6 @@ struct CostBuilder {
         }
         try build_mm()
     }
-
 }
 
 struct LOUDSBuilder {
@@ -281,9 +278,7 @@ struct LOUDSBuilder {
         }
 
         let header = Data(bytes: headerArray, count: MemoryLayout<UInt32>.size * headerArray.count)
-        let binary = count + header + body
-
-        return binary
+        return count + header + body
     }
 
     func process(_ inputIdentifier: String, verbose: Bool) throws {
@@ -385,7 +380,6 @@ struct LOUDSBuilder {
             }
         }
     }
-
 }
 
 class TrieNode<Key: Hashable, Value: Hashable> {

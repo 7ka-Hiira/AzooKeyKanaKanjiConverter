@@ -2,7 +2,7 @@ import EfficientNGram
 package import Foundation
 import SwiftUtils
 
-@MainActor package final class Zenz {
+package final class Zenz {
     package var resourceURL: URL
     private var zenzContext: ZenzContext?
     init(resourceURL: URL) throws {
@@ -41,7 +41,7 @@ import SwiftUtils
             return .error
         }
         for candidate in candidates {
-            let result = zenzContext.evaluate_candidate(
+            return zenzContext.evaluate_candidate(
                 input: convertTarget.toKatakana(),
                 candidate: candidate,
                 requestRichCandidates: requestRichCandidates,
@@ -49,7 +49,6 @@ import SwiftUtils
                 personalizationMode: personalizationMode,
                 versionDependentConfig: versionDependentConfig
             )
-            return result
         }
         return .error
     }
@@ -58,8 +57,7 @@ import SwiftUtils
         guard let zenzContext else {
             return []
         }
-        let result = zenzContext.predict_next_character(leftSideContext: leftSideContext, count: count)
-        return result
+        return zenzContext.predict_next_character(leftSideContext: leftSideContext, count: count)
     }
 
     package func pureGreedyDecoding(pureInput: String, maxCount: Int = .max) -> String {

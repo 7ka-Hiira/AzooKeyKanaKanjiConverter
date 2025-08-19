@@ -16,7 +16,7 @@ extension Subcommands {
         static let configuration = CommandConfiguration(commandName: "experimental_predict", abstract: "Show help for this utility.")
 
         @MainActor mutating func run() async {
-            let converter = KanaKanjiConverter()
+            let converter = KanaKanjiConverter.withDefaultDictionary()
             let result = converter.predictNextCharacter(leftSideContext: self.input, count: 10, options: requestOptions())
             for (i, res) in result.indexed() {
                 print("\(i). \(res.character): \(res.value)")
@@ -24,13 +24,11 @@ extension Subcommands {
         }
 
         func requestOptions() -> ConvertRequestOptions {
-            .withDefaultDictionary(
+            .init(
                 N_best: 10,
                 requireJapanesePrediction: true,
                 requireEnglishPrediction: false,
                 keyboardLanguage: .ja_JP,
-                typographyLetterCandidate: false,
-                unicodeCandidate: true,
                 englishCandidateInRoman2KanaInput: true,
                 fullWidthRomanCandidate: false,
                 halfWidthKanaCandidate: false,
@@ -39,6 +37,8 @@ extension Subcommands {
                 shouldResetMemory: false,
                 memoryDirectoryURL: URL(fileURLWithPath: ""),
                 sharedContainerURL: URL(fileURLWithPath: ""),
+                textReplacer: .withDefaultEmojiDictionary(),
+                specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders,
                 zenzaiMode: self.zenzWeightPath.isEmpty ? .off : .on(weight: URL(string: self.zenzWeightPath)!, inferenceLimit: .max, personalizationMode: nil, versionDependentMode: .v3(.init())),
                 metadata: .init(versionString: "anco for debugging")
             )

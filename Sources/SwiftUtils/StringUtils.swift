@@ -17,9 +17,19 @@ extension StringProtocol {
     }
     /// ローマ字のみかどうか
     ///  - note: 空文字列の場合`false`を返す。
+    /// 以前は正規表現ベースで実装していたが、パフォーマンス上良くなかったので直接実装した
     @inlinable
     package var onlyRomanAlphabet: Bool {
-        !isEmpty && range(of: "[^a-zA-Z]", options: .regularExpression) == nil
+        guard !self.isEmpty else {
+            return false
+        }
+        for value in self.utf8 {
+            // 'a' <= value <= 'z' || 'A' <= value <= 'Z'
+            guard 0x61 <= value && value <= 0x7a || 0x41 <= value && value <= 0x5a else {
+                return false
+            }
+        }
+        return true
     }
     /// ローマ字を含むかどうか
     ///  - note: 空文字列の場合`false`を返す。

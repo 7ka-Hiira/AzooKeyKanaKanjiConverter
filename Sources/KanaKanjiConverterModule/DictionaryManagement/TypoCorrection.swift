@@ -1,8 +1,8 @@
 import SwiftUtils
 
 struct TypoCorrectionGenerator: Sendable {
-    init(inputs: [ComposingText.InputElement], range: ProcessRange, needTypoCorrection: Bool) {
-        self.maxPenalty = needTypoCorrection ? 3.5 * 3 : 0
+    init(inputs: [ComposingText.InputElement], range: ProcessRange) {
+        self.maxPenalty = 3.5 * 3
         self.inputs = inputs
         self.range = range
 
@@ -14,7 +14,7 @@ struct TypoCorrectionGenerator: Sendable {
                 if count <= j {
                     return []
                 }
-                return Self.getTypo(inputs[range.leftIndex + i ... range.leftIndex + j], frozen: !needTypoCorrection)
+                return Self.getTypo(inputs[range.leftIndex + i ... range.leftIndex + j])
             }
         }
         // 深さ優先で列挙する
@@ -186,42 +186,37 @@ struct TypoCorrectionGenerator: Sendable {
             }
             // 訂正数上限(3個)
             if penalty >= maxPenalty {
-                var convertTargetElements = convertTargetElements
-                let correct = [inputs[self.range.leftIndex + count]].map { element in
-                    let char: Character
-                    if case let .character(c) = element.piece {
-                        char = c.toKatakana()
-                    } else {
-                        return element
-                    }
-                    return ComposingText.InputElement(piece: .character(char), inputStyle: element.inputStyle)
+                let element = inputs[self.range.leftIndex + count]
+                let correct = switch element.piece {
+                case let .character(c), let .key(intention: c?, modifiers: _):
+                    ComposingText.InputElement(piece: .character(c.toKatakana()), inputStyle: element.inputStyle)
+                case _:
+                    element
                 }
-                if count + correct.count > self.nodes.endIndex {
+                // +1 for `correct`
+                if count + 1 > self.nodes.endIndex {
                     if let result {
                         return result
                     } else {
                         continue
                     }
                 }
-                for element in correct {
-                    ComposingText.updateConvertTargetElements(currentElements: &convertTargetElements, newElement: element)
-                }
-                stack.append((convertTargetElements, count + correct.count, penalty))
+                var convertTargetElements = convertTargetElements
+                ComposingText.updateConvertTargetElements(currentElements: &convertTargetElements, newElement: correct)
+                stack.append((convertTargetElements, count + 1, penalty))
             } else {
-                stack.append(contentsOf: self.nodes[count].compactMap {
-                    if count + $0.inputElements.count > self.nodes.endIndex {
-                        return nil
-                    }
+                // ノード数は高々1, 2なので、for loopを回す方が効率が良い
+                for node in self.nodes[count] where count + node.inputElements.count <= self.nodes.endIndex {
                     var convertTargetElements = convertTargetElements
-                    for element in $0.inputElements {
+                    for element in node.inputElements {
                         ComposingText.updateConvertTargetElements(currentElements: &convertTargetElements, newElement: element)
                     }
-                    return (
+                    stack.append((
                         convertTargetElements: convertTargetElements,
-                        count: count + $0.inputElements.count,
-                        penalty: penalty + $0.weight
-                    )
-                })
+                        count: count + node.inputElements.count,
+                        penalty: penalty + node.weight
+                    ))
+                }
             }
             // このループで出力すべきものがある場合は出力する（yield）
             if let result {
@@ -231,44 +226,68 @@ struct TypoCorrectionGenerator: Sendable {
         return nil
     }
 
-    fileprivate static func getTypo(_ elements: some Collection<ComposingText.InputElement>, frozen: Bool = false) -> [TypoCandidate] {
-        let key = elements.reduce(into: "") {
-            if case let .character(c) = $1.piece {
+    private enum InputStylesType {
+        case none
+        case onlyDirect
+        case onlyRoman2KanaCompatible
+        case other
+    }
+
+    private static func getTypo(_ elements: some Collection<ComposingText.InputElement>) -> [TypoCandidate] {
+        guard !elements.isEmpty else {
+            return []
+        }
+        lazy var key = elements.reduce(into: "") {
+            switch $1.piece {
+            case let .character(c), .key(intention: let c?, modifiers: _):
                 $0.append(c.toKatakana())
+            case _:
+                break
             }
         }
 
-        if (elements.allSatisfy {$0.inputStyle == .direct}) {
-            let dictionary: [String: [TypoCandidate]] = frozen ? [:] : Self.directPossibleTypo
-            if key.count > 1 {
-                return dictionary[key, default: []]
-            } else if key.count == 1 {
-                var result = dictionary[key, default: []]
-                // そのまま
-                result.append(TypoCandidate(inputElements: key.map { ComposingText.InputElement(piece: .character($0), inputStyle: .direct) }, weight: 0))
-                return result
+        let inputStylesType = elements.reduce(InputStylesType.none) { (result, element) in
+            switch (result, element.inputStyle) {
+            case (.other, _): .other
+            case (.onlyDirect, .direct): .onlyDirect
+            case (.onlyDirect, _): .other
+            case (.onlyRoman2KanaCompatible, .roman2kana), (.onlyRoman2KanaCompatible, .mapped(id: .defaultRomanToKana)): .onlyRoman2KanaCompatible
+            case (.onlyRoman2KanaCompatible, _): .other
+            case (.none, .direct): .onlyDirect
+            case (.none, .roman2kana), (.none, .mapped(id: .defaultRomanToKana)): .onlyRoman2KanaCompatible
+            case (.none, _): .other
             }
         }
-        if (elements.allSatisfy {$0.inputStyle == .roman2kana || $0.inputStyle == .mapped(id: .defaultRomanToKana)}) {
-            let dictionary: [String: [TypoCandidate]] = frozen ? [:] : Self.roman2KanaPossibleTypo
-            if key.count > 1 {
-                return dictionary[key, default: []]
-            } else if key.count == 1 {
+        switch inputStylesType {
+        case .onlyDirect:
+            let dictionary: [String: [TypoCandidate]] = Self.directPossibleTypo
+            if key.count == 1 {
                 var result = dictionary[key, default: []]
                 // そのまま
-                result.append(
-                    TypoCandidate(inputElements: key.map { ComposingText.InputElement(piece: .character($0), inputStyle: .roman2kana) }, weight: 0)
-                )
+                result.append(TypoCandidate(inputElements: key.map {.init(character: $0, inputStyle: .direct)}, weight: 0))
                 return result
+            } else {
+                return dictionary[key, default: []]
             }
-        }
-        // `.mapped`や、混ざっているケースでここに到達する
-        return if elements.count == 1 {
-            [
-                TypoCandidate(inputElements: [elements.first!], weight: 0)
-            ]
-        } else {
-            []
+        case .onlyRoman2KanaCompatible:
+            let dictionary: [String: [TypoCandidate]] = Self.roman2KanaPossibleTypo
+            if key.count == 1 {
+                var result = dictionary[key, default: []]
+                // そのまま
+                result.append(TypoCandidate(inputElements: key.map {.init(character: $0, inputStyle: .roman2kana)}, weight: 0))
+                return result
+            } else {
+                return dictionary[key, default: []]
+            }
+        case .none, .other:
+            // `.mapped`や、混ざっているケースでここに到達する
+            return if elements.count == 1 {
+                [
+                    TypoCandidate(inputElements: [elements.first!], weight: 0)
+                ]
+            } else {
+                []
+            }
         }
     }
 

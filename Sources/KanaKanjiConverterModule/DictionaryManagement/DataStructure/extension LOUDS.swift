@@ -39,60 +39,51 @@ extension LOUDS {
     private static func loadLOUDSBinary(from url: URL) -> [UInt64]? {
         do {
             let binaryData = try Data(contentsOf: url, options: [.uncached]) // 2度読み込むことはないのでキャッシュ不要
-            let ui64array = binaryData.toArray(of: UInt64.self)
-            return ui64array
+            return binaryData.toArray(of: UInt64.self)
         } catch {
             debug(error)
             return nil
         }
     }
 
-    private static func getLOUDSURL(_ identifier: String, option: ConvertRequestOptions) -> (chars: URL, louds: URL) {
-
-        if identifier == "user" {
-            return (
-                option.sharedContainerURL.appendingPathComponent("user.loudschars2", isDirectory: false),
-                option.sharedContainerURL.appendingPathComponent("user.louds", isDirectory: false)
-            )
-        }
-        if identifier == "memory" {
-            return (
-                option.memoryDirectoryURL.appendingPathComponent("memory.loudschars2", isDirectory: false),
-                option.memoryDirectoryURL.appendingPathComponent("memory.louds", isDirectory: false)
-            )
-        }
-        return (
-            option.dictionaryResourceURL.appendingPathComponent("louds/\(identifier).loudschars2", isDirectory: false),
-            option.dictionaryResourceURL.appendingPathComponent("louds/\(identifier).louds", isDirectory: false)
-        )
-    }
-
-    private static func getLoudstxt3URL(_ identifier: String, option: ConvertRequestOptions) -> URL {
-        if identifier.hasPrefix("user") {
-            return option.sharedContainerURL.appendingPathComponent("\(identifier).loudstxt3", isDirectory: false)
-        }
-        if identifier.hasPrefix("memory") {
-            return option.memoryDirectoryURL.appendingPathComponent("\(identifier).loudstxt3", isDirectory: false)
-        }
-        return option.dictionaryResourceURL.appendingPathComponent("louds/\(identifier).loudstxt3", isDirectory: false)
-    }
-
     /// LOUDSをファイルから読み込む関数
     /// - Parameter identifier: ファイル名
     /// - Returns: 存在すればLOUDSデータを返し、存在しなければ`nil`を返す。
-    package static func load(_ identifier: String, option: ConvertRequestOptions) -> LOUDS? {
-        let (charsURL, loudsURL) = getLOUDSURL(identifier, option: option)
+    package static func load(_ identifier: String, dictionaryURL: URL) -> LOUDS? {
+        let (charsURL, loudsURL) = (
+            dictionaryURL.appendingPathComponent("louds/\(identifier).loudschars2", isDirectory: false),
+            dictionaryURL.appendingPathComponent("louds/\(identifier).louds", isDirectory: false)
+        )
+        return load(charsURL: charsURL, loudsURL: loudsURL)
+    }
+
+    package static func loadMemory(memoryURL: URL) -> LOUDS? {
+        let (charsURL, loudsURL) = (
+            memoryURL.appendingPathComponent("memory.loudschars2", isDirectory: false),
+            memoryURL.appendingPathComponent("memory.louds", isDirectory: false)
+        )
+        return load(charsURL: charsURL, loudsURL: loudsURL)
+    }
+
+    package static func loadUserDictionary(userDictionaryURL: URL) -> LOUDS? {
+        let (charsURL, loudsURL) = (
+            userDictionaryURL.appending(path: "user.loudschars2", directoryHint: .notDirectory),
+            userDictionaryURL.appending(path: "user.louds", directoryHint: .notDirectory)
+        )
+        return load(charsURL: charsURL, loudsURL: loudsURL)
+    }
+
+    private static func load(charsURL: URL, loudsURL: URL) -> LOUDS? {
         let nodeIndex2ID: [UInt8]
         do {
             nodeIndex2ID = try Array(Data(contentsOf: charsURL, options: [.uncached]))   // 2度読み込むことはないのでキャッシュ不要
         } catch {
-            debug("Error: \(identifier)に対するLOUDSファイルが存在しません。このエラーは無視できる可能性があります。 Description: \(error)")
+            debug("Error: \(loudsURL)に対するLOUDSファイルが存在しません。このエラーは無視できる可能性があります。 Description: \(error)")
             return nil
         }
 
         if let bytes = LOUDS.loadLOUDSBinary(from: loudsURL) {
-            let louds = LOUDS(bytes: bytes.map {$0.littleEndian}, nodeIndex2ID: nodeIndex2ID)
-            return louds
+            return LOUDS(bytes: bytes.map {$0.littleEndian}, nodeIndex2ID: nodeIndex2ID)
         }
         return nil
     }
@@ -140,21 +131,46 @@ extension LOUDS {
         return dicdata
     }
 
-    static func getDataForLoudstxt3(_ identifier: String, indices: [Int], cache: Data? = nil, option: ConvertRequestOptions) -> [DicdataElement] {
-        let binary: Data
-
+    static func getUserDictionaryDataForLoudstxt3(_ identifier: String, indices: [Int], cache: Data? = nil, userDictionaryURL: URL) -> [DicdataElement] {
         if let cache {
-            binary = cache
-        } else {
-            do {
-                let url = getLoudstxt3URL(identifier, option: option)
-                binary = try Data(contentsOf: url)
-            } catch {
-                debug("getDataForLoudstxt3: \(error)")
-                return []
-            }
+            return Self.paresLoudstxt3Binary(binary: cache, indices: indices)
         }
+        do {
+            let url = userDictionaryURL.appendingPathComponent("\(identifier).loudstxt3", isDirectory: false)
+            return Self.paresLoudstxt3Binary(binary: try Data(contentsOf: url), indices: indices)
+        } catch {
+            debug(#function, error)
+            return []
+        }
+    }
 
+    static func getMemoryDataForLoudstxt3(_ identifier: String, indices: [Int], cache: Data? = nil, memoryURL: URL) -> [DicdataElement] {
+        if let cache {
+            return Self.paresLoudstxt3Binary(binary: cache, indices: indices)
+        }
+        do {
+            let url = memoryURL.appendingPathComponent("\(identifier).loudstxt3", isDirectory: false)
+            return Self.paresLoudstxt3Binary(binary: try Data(contentsOf: url), indices: indices)
+        } catch {
+            debug(#function, error)
+            return []
+        }
+    }
+
+    static func getDataForLoudstxt3(_ identifier: String, indices: [Int], cache: Data? = nil, dictionaryURL: URL) -> [DicdataElement] {
+        if let cache {
+            return Self.paresLoudstxt3Binary(binary: cache, indices: indices)
+        }
+        do {
+            let url = dictionaryURL.appendingPathComponent("louds/\(identifier).loudstxt3", isDirectory: false)
+            return Self.paresLoudstxt3Binary(binary: try Data(contentsOf: url), indices: indices)
+        } catch {
+            debug(#function, error)
+            return []
+        }
+    }
+
+    private static func paresLoudstxt3Binary(binary: Data, indices: [Int]) -> [DicdataElement] {
         let lc: Int = Int(readUInt16LE(binary, 0))
         // Header table of UInt32 offsets starts at byte 2
         var out: [DicdataElement] = []
@@ -169,36 +185,5 @@ extension LOUDS {
             out.append(contentsOf: parseBinary(binary: binary[start ..< end]))
         }
         return out
-    }
-
-    /// indexとの対応を維持したバージョン
-    static func getDataForLoudstxt3(_ identifier: String, indices: [(trueIndex: Int, keyIndex: Int)], cache: Data? = nil, option: ConvertRequestOptions) -> [(loudsNodeIndex: Int, dicdata: [DicdataElement])] {
-        let binary: Data
-
-        if let cache {
-            binary = cache
-        } else {
-            do {
-                let url = getLoudstxt3URL(identifier, option: option)
-                binary = try Data(contentsOf: url)
-            } catch {
-                debug("getDataForLoudstxt3: \(error)")
-                return []
-            }
-        }
-
-        let lc: Int = Int(readUInt16LE(binary, 0))
-        var result: [(loudsNodeIndex: Int, dicdata: [DicdataElement])] = []
-        result.reserveCapacity(indices.count)
-        for (trueIndex, keyIndex) in indices {
-            let start = Int(readUInt32LE(binary, 2 + keyIndex * 4))
-            let end: Int = if keyIndex == (lc - 1) {
-                binary.endIndex
-            } else {
-                Int(readUInt32LE(binary, 2 + (keyIndex + 1) * 4))
-            }
-            result.append((trueIndex, parseBinary(binary: binary[start ..< end])))
-        }
-        return result
     }
 }

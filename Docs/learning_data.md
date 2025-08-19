@@ -12,7 +12,7 @@ AzooKeyKanaKanjiConverter では、ユーザが変換候補を選択した結果
 
 更新時には一時的に `.2` の拡張子が付いたファイルを作成し、安全に置き換える仕組みになっています。更新処理の詳細は [conversion_algorithms.md](./conversion_algorithms.md) を参照してください。
 
-## ディレクトリの指定
+## ディレクトリの指定と学習設定
 
 `ConvertRequestOptions` の `memoryDirectoryURL` に書き込み可能なディレクトリを指定してください。通常はアプリの書類フォルダなどを指定します。英語用と日本語用など、キーボードのターゲットごとに学習データを分けたい場合は、言語ごとに別のディレクトリを指定してください。
 
@@ -20,35 +20,40 @@ AzooKeyKanaKanjiConverter では、ユーザが変換候補を選択した結果
 let documents = FileManager.default
     .urls(for: .documentDirectory, in: .userDomainMask)
     .first!
-let options = ConvertRequestOptions.withDefaultDictionary(
+
+// 変換リクエスト時のオプションで学習種別等を指定
+let options = ConvertRequestOptions(
     requireJapanesePrediction: true,
     requireEnglishPrediction: true,
     keyboardLanguage: .ja_JP,
     learningType: .inputAndOutput,
+    maxMemoryCount: 65536,
     memoryDirectoryURL: documents,
-    sharedContainerURL: documents
+    sharedContainerURL: documents,
+    textReplacer: .withDefaultEmojiDictionary(),
+    specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders
+)
+
+// もしくは明示的に学習設定を更新
+converter.updateLearningConfig(
+    LearningConfig(learningType: .inputAndOutput, maxMemoryCount: 65536, memoryURL: documents)
 )
 ```
 
-## 学習データのリセット
+## 学習データの保存・リセット
 
-変換候補の長押しから個別に学習をリセットできます。ディレクトリを削除することで全ての学習内容を消去することも可能です。
-
-プログラムから一括で学習データを初期化したい場合は、`shouldResetMemory` オプションを
-`true` にして `ConvertRequestOptions` を生成します。初期化後1回だけ
-`LearningMemory` が自動的にファイルを削除します。
+確定候補に応じた学習は `updateLearningData(_:)` で反映されます。永続化は `commitUpdateLearningData()` を呼びます。
 
 ```swift
-let options = ConvertRequestOptions.withDefaultDictionary(
-    requireJapanesePrediction: true,
-    requireEnglishPrediction: true,
-    keyboardLanguage: .ja_JP,
-    learningType: .inputAndOutput,
-    shouldResetMemory: true,
-    memoryDirectoryURL: documents,
-    sharedContainerURL: documents
-)
+converter.updateLearningData(candidate)
+converter.commitUpdateLearningData()    // ディスクへ保存
 ```
 
-ファイルの完全削除のみを実行したい場合は
+学習データを一括初期化する場合は `resetMemory()` を使用してください。
+
+```swift
+converter.resetMemory()
+```
+
+（参考）ファイルの完全削除のみを実行したい場合は
 `LongTermLearningMemory.reset(directoryURL:)` を直接呼び出してください。

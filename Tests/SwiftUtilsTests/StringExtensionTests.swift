@@ -10,7 +10,6 @@
 import XCTest
 
 final class StringExtensionTests: XCTestCase {
-
     func testToKatakana() throws {
         XCTAssertEqual("かゔぁあーんじょ123+++リスク".toKatakana(), "カヴァアーンジョ123+++リスク")
         XCTAssertEqual("".toKatakana(), "")

@@ -186,7 +186,7 @@ final class SwiftTrainer {
 
         // 出力フォルダの設定（デフォルト: ~/Library/Application Support/SwiftNGram/marisa/）
         let marisaDir: URL
-        if let outputDir = outputDir {
+        if let outputDir {
             marisaDir = URL(fileURLWithPath: outputDir)
         } else {
             let libraryDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -229,7 +229,6 @@ final class SwiftTrainer {
             print(path)
         }
     }
-
 }
 
 /// ファイルを読み込み、行ごとの文字列配列を返す関数
@@ -294,7 +293,7 @@ public func trainNGramFromFile(
     trainNGram(lines: lines, n: n, baseFilePattern: baseFilePattern, outputDir: outputDir, resumeFilePattern: resumeFilePattern)
 }
 #else
-public func trainNGramFromFile(filePath: String, n: Int, baseFilePattern: String, outputDir: String? = nil, resumeFilePattern: String? = nil) {
+public func trainNGramFromFile(filePath _: String, n _: Int, baseFilePattern _: String, outputDir _: String? = nil, resumeFilePattern _: String? = nil) {
     fatalError("[Error] trainNGramFromFile is unsupported.")
 }
 #endif

@@ -37,22 +37,22 @@ extension Subcommands {
 
         mutating func run() async throws {
             let inputItems = try parseInputFile()
-            let converter = await KanaKanjiConverter()
+            let converter = KanaKanjiConverter.withDefaultDictionary()
             var executionTime: Double = 0
             var resultItems: [EvaluateItem] = []
             for item in inputItems {
                 let start = Date()
                 // セットアップ
-                await converter.sendToDicdataStore(.importDynamicUserDict(
+                converter.importDynamicUserDictionary(
                     (item.user_dictionary ?? []).map {
                         DicdataElement(word: $0.word, ruby: $0.reading.toKatakana(), cid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -10)
                     }
-                ))
+                )
                 // 変換
                 var composingText = ComposingText()
                 composingText.insertAtCursorPosition(item.query, inputStyle: .direct)
                 let requestOptions = self.requestOptions(leftSideContext: item.left_context)
-                let result = await converter.requestCandidates(composingText, options: requestOptions)
+                let result = converter.requestCandidates(composingText, options: requestOptions)
                 let mainResults = result.mainResults.filter {
                     $0.data.reduce(into: "", {$0.append(contentsOf: $1.ruby)}) == item.query.toKatakana()
                 }
@@ -68,7 +68,7 @@ extension Subcommands {
                 )
                 executionTime += Date().timeIntervalSince(start)
                 // Explictly reset state
-                await converter.stopComposition()
+                converter.stopComposition()
             }
             var result = EvaluateResult(n_best: self.configNBest, execution_time: executionTime, items: resultItems)
             if stable {
@@ -108,13 +108,11 @@ extension Subcommands {
             } else {
                 personalizationMode = nil
             }
-            var option: ConvertRequestOptions = .withDefaultDictionary(
+            var option: ConvertRequestOptions = .init(
                 N_best: self.configNBest,
                 requireJapanesePrediction: false,
                 requireEnglishPrediction: false,
                 keyboardLanguage: .ja_JP,
-                typographyLetterCandidate: false,
-                unicodeCandidate: true,
                 englishCandidateInRoman2KanaInput: true,
                 fullWidthRomanCandidate: false,
                 halfWidthKanaCandidate: false,
@@ -123,6 +121,8 @@ extension Subcommands {
                 shouldResetMemory: false,
                 memoryDirectoryURL: URL(fileURLWithPath: ""),
                 sharedContainerURL: URL(fileURLWithPath: ""),
+                textReplacer: .withDefaultEmojiDictionary(),
+                specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders,
                 zenzaiMode: self.zenzWeightPath.isEmpty ? .off : .on(weight: URL(string: self.zenzWeightPath)!, inferenceLimit: self.configZenzaiInferenceLimit, personalizationMode: personalizationMode, versionDependentMode: .v2(.init(leftSideContext: self.configZenzaiIgnoreLeftContext ? nil : leftSideContext))),
                 metadata: .init(versionString: "anco for debugging")
             )

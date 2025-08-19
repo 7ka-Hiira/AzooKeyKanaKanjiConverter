@@ -10,7 +10,6 @@
 import XCTest
 
 final class CharacterUtilsTests: XCTestCase {
-
     func testIsKogana() throws {
         XCTAssertTrue(CharacterUtils.isKogana("ぁ"))
         XCTAssertTrue(CharacterUtils.isKogana("ヵ"))
@@ -176,5 +175,4 @@ final class CharacterUtilsTests: XCTestCase {
         XCTAssertEqual(CharacterUtils.requestChange("漢"), "漢")
         XCTAssertEqual(CharacterUtils.requestChange("。"), "。")
     }
-
 }

@@ -1,28 +1,8 @@
-public import Foundation
+import Foundation
 @_exported public import KanaKanjiConverterModule
 
-public extension ConvertRequestOptions {
-    static func withDefaultDictionary(
-        N_best: Int = 10,
-        needTypoCorrection: Bool? = nil,
-        requireJapanesePrediction: Bool,
-        requireEnglishPrediction: Bool,
-        keyboardLanguage: KeyboardLanguage,
-        typographyLetterCandidate: Bool = false,
-        unicodeCandidate: Bool = true,
-        englishCandidateInRoman2KanaInput: Bool = false,
-        fullWidthRomanCandidate: Bool = false,
-        halfWidthKanaCandidate: Bool = false,
-        learningType: LearningType,
-        maxMemoryCount: Int = 65536,
-        shouldResetMemory: Bool = false,
-        memoryDirectoryURL: URL,
-        sharedContainerURL: URL,
-        zenzaiMode: ZenzaiMode = .off,
-        textReplacer: TextReplacer = .withDefaultEmojiDictionary(),
-        preloadDictionary: Bool = false,
-        metadata: ConvertRequestOptions.Metadata?
-    ) -> Self {
+public extension DicdataStore {
+    static func withDefaultDictionary(preloadDictionary: Bool = false) -> Self {
         #if os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
         let dictionaryDirectory = Bundle.module.bundleURL.appendingPathComponent("Dictionary", isDirectory: true)
         #elseif os(macOS)
@@ -31,40 +11,13 @@ public extension ConvertRequestOptions {
         let dictionaryDirectory = Bundle.module.resourceURL!.appendingPathComponent("Dictionary", isDirectory: true)
         #endif
 
-        var specialCandidateProviders = [any SpecialCandidateProvider]()
-        if typographyLetterCandidate {
-            specialCandidateProviders.append(.typography)
-        }
-        if unicodeCandidate {
-            specialCandidateProviders.append(.unicode)
-        }
-        specialCandidateProviders.append(.emailAddress)
-        specialCandidateProviders.append(.timeExpression)
-        specialCandidateProviders.append(.calendar)
-        specialCandidateProviders.append(.version)
-        specialCandidateProviders.append(.commaSeparatedNumber)
+        return .init(dictionaryURL: dictionaryDirectory, preloadDictionary: preloadDictionary)
+    }
+}
 
-        return Self(
-            N_best: N_best,
-            needTypoCorrection: needTypoCorrection,
-            requireJapanesePrediction: requireJapanesePrediction,
-            requireEnglishPrediction: requireEnglishPrediction,
-            keyboardLanguage: keyboardLanguage,
-            englishCandidateInRoman2KanaInput: englishCandidateInRoman2KanaInput,
-            fullWidthRomanCandidate: fullWidthRomanCandidate,
-            halfWidthKanaCandidate: halfWidthKanaCandidate,
-            learningType: learningType,
-            maxMemoryCount: maxMemoryCount,
-            shouldResetMemory: shouldResetMemory,
-            dictionaryResourceURL: dictionaryDirectory,
-            memoryDirectoryURL: memoryDirectoryURL,
-            sharedContainerURL: sharedContainerURL,
-            textReplacer: textReplacer,
-            specialCandidateProviders: specialCandidateProviders,
-            zenzaiMode: zenzaiMode,
-            preloadDictionary: preloadDictionary,
-            metadata: metadata
-        )
+public extension KanaKanjiConverter {
+    static func withDefaultDictionary(preloadDictionary: Bool = false) -> Self {
+        .init(dicdataStore: .withDefaultDictionary(preloadDictionary: preloadDictionary))
     }
 }
 

@@ -3,14 +3,25 @@
 ニューラルかな漢字変換エンジン「Zenzai」を有効化することで、高精度な変換を提供できます。利用するには変換オプションの`zenzaiMode`を設定します。
 
 ```swift
-let options = ConvertRequestOptions.withDefaultDictionary(
+import KanaKanjiConverterModuleWithDefaultDictionary
+let converter = KanaKanjiConverter.withDefaultDictionary()
+
+let options = ConvertRequestOptions(
     // ...
+    requireJapanesePrediction: true,
+    requireEnglishPrediction: false,
+    keyboardLanguage: .ja_JP,
+    learningType: .nothing,
+    memoryDirectoryURL: documents,
+    sharedContainerURL: documents,
+    textReplacer: .withDefaultEmojiDictionary(),
+    specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders,
     zenzaiMode: .on(
         weight: url,
         inferenceLimit: 1,
         versionDependentMode: .v3(.init(profile: "三輪/azooKeyの開発者", leftSideContext: "私の名前は"))
-    )
-    // ...
+    ),
+    metadata: .init(versionString: "Your App Version X")
 )
 ```
 

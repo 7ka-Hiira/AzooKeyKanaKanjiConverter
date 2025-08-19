@@ -389,7 +389,7 @@ extension ComposingText {
     @discardableResult
     static func updateConvertTargetElements(currentElements: inout [ConvertTargetElement], newElement: InputElement) -> Int {
         switch newElement.piece {
-        case .character(let ch):
+        case .character, .key:
             if currentElements.isEmpty {
                 let table: InputTable? = {
                     switch newElement.inputStyle {
@@ -398,7 +398,7 @@ extension ComposingText {
                     case .mapped(let id): return InputStyleManager.shared.table(for: id)
                     }
                 }()
-                let s = initializeConvertTarget(cachedTable: table, newCharacter: ch)
+                let s = initializeConvertTarget(cachedTable: table, initialPiece: newElement.piece)
                 currentElements.append(
                     ConvertTargetElement(string: s, inputStyle: newElement.inputStyle, cachedTable: table)
                 )
@@ -407,7 +407,7 @@ extension ComposingText {
             let lastIndex = currentElements.count - 1
             if currentElements[lastIndex].inputStyle == newElement.inputStyle {
                 let table = currentElements[lastIndex].cachedTable
-                return updateConvertTarget(&currentElements[lastIndex].string, cachedTable: table, newCharacter: ch)
+                return updateConvertTarget(&currentElements[lastIndex].string, cachedTable: table, piece: newElement.piece)
             } else {
                 let table: InputTable? = {
                     switch newElement.inputStyle {
@@ -416,7 +416,7 @@ extension ComposingText {
                     case .mapped(let id): return InputStyleManager.shared.table(for: id)
                     }
                 }()
-                let s = initializeConvertTarget(cachedTable: table, newCharacter: ch)
+                let s = initializeConvertTarget(cachedTable: table, initialPiece: newElement.piece)
                 currentElements.append(
                     ConvertTargetElement(string: s, inputStyle: newElement.inputStyle, cachedTable: table)
                 )
@@ -433,24 +433,18 @@ extension ComposingText {
         }
     }
 
-    static func initializeConvertTarget(cachedTable: borrowing InputTable?, newCharacter: Character) -> [Character] {
+    static func initializeConvertTarget(cachedTable: borrowing InputTable?, initialPiece: InputPiece) -> [Character] {
         if cachedTable != nil {
             var buf: [Character] = []
-            cachedTable!.apply(to: &buf, added: .character(newCharacter))
+            cachedTable!.apply(to: &buf, added: initialPiece)
             return buf
         } else {
-            return [newCharacter]
-        }
-    }
-
-    /// - Returns: deletedCount
-    @discardableResult
-    static func updateConvertTarget(_ convertTarget: inout [Character], cachedTable: borrowing InputTable?, newCharacter: Character) -> Int {
-        if cachedTable != nil {
-            return cachedTable!.apply(to: &convertTarget, added: .character(newCharacter))
-        } else {
-            convertTarget.append(newCharacter)
-            return 0
+            return switch initialPiece {
+            case .character(let character): [character]
+            case .compositionSeparator: []
+            case .key(intention: let c?, modifiers: _): [c]
+            case .key(intention: nil, modifiers: _): []
+            }
         }
     }
 
@@ -458,10 +452,15 @@ extension ComposingText {
     @discardableResult
     static func updateConvertTarget(_ convertTarget: inout [Character], cachedTable: borrowing InputTable?, piece: InputPiece) -> Int {
         switch piece {
-        case .character(let ch):
-            return updateConvertTarget(&convertTarget, cachedTable: cachedTable, newCharacter: ch)
-        case .compositionSeparator:
-            return cachedTable?.apply(to: &convertTarget, added: .compositionSeparator) ?? 0
+        case .character(let ch), .key(intention: let ch?, modifiers: _):
+            if cachedTable != nil {
+                return cachedTable?.apply(to: &convertTarget, added: piece) ?? 0
+            } else {
+                convertTarget.append(ch)
+                return 0
+            }
+        case .compositionSeparator, .key(intention: nil, modifiers: _):
+            return cachedTable?.apply(to: &convertTarget, added: piece) ?? 0
         }
     }
 }

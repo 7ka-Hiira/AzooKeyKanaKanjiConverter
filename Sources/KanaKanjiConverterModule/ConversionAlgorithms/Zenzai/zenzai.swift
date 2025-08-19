@@ -36,7 +36,7 @@ extension Kana2Kanji {
             }
         }
 
-        func getPreprocessedLattice(for newInputData: ComposingText, kanaKanji: Kana2Kanji) -> Lattice? {
+        func getPreprocessedLattice(for newInputData: ComposingText, kanaKanji: Kana2Kanji, dicdataStoreState: DicdataStoreState) -> Lattice? {
             guard let cachedLattice else { return nil }
 
             // 同じComposingTextなら既存のlatticeをそのまま返す
@@ -50,7 +50,8 @@ extension Kana2Kanji {
                 inputData: newInputData,
                 inputCount: newInputData.input.count,
                 surfaceCount: newInputData.convertTarget.count,
-                incrementalCacheInfo: (inputData: inputData, lattice: cachedLattice)
+                incrementalCacheInfo: (inputData: inputData, lattice: cachedLattice),
+                dicdataStoreState: dicdataStoreState
             )
         }
     }
@@ -74,14 +75,15 @@ extension Kana2Kanji {
     }
 
     /// zenzaiシステムによる完全変換。
-    @MainActor func all_zenzai(
+    func all_zenzai(
         _ inputData: ComposingText,
         zenz: Zenz,
         zenzaiCache: ZenzaiCache?,
         inferenceLimit: Int,
         requestRichCandidates: Bool,
         personalizationMode: (mode: ConvertRequestOptions.ZenzaiMode.PersonalizationMode, base: EfficientNGram, personal: EfficientNGram)?,
-        versionDependentConfig: ConvertRequestOptions.ZenzaiVersionDependentMode
+        versionDependentConfig: ConvertRequestOptions.ZenzaiVersionDependentMode,
+        dicdataStoreState: DicdataStoreState
     ) -> (result: LatticeNode, lattice: Lattice, cache: ZenzaiCache) {
         var constraint = zenzaiCache?.getNewConstraint(for: inputData) ?? PrefixConstraint([])
         debug("initial constraint", constraint)
@@ -102,16 +104,16 @@ extension Kana2Kanji {
                 preprocessedLattice = lattice
             } else {
                 // latticeがまだemptyの場合、zenzaiCache側に存在するキャッシュの活用を試みる
-                preprocessedLattice = zenzaiCache?.getPreprocessedLattice(for: inputData, kanaKanji: self)
+                preprocessedLattice = zenzaiCache?.getPreprocessedLattice(for: inputData, kanaKanji: self, dicdataStoreState: dicdataStoreState)
             }
             let draftResult: (result: LatticeNode, lattice: Lattice)
             if constraint.isEmpty {
                 // 全部を変換する場合はN=2の変換を行う
                 // 実験の結果、ここは2-bestを取ると平均的な速度が最良になることがわかったので、そうしている。
-                draftResult = self.kana2lattice_all(inputData, N_best: 2, needTypoCorrection: false, preprocessedLattice: preprocessedLattice)
+                draftResult = self.kana2lattice_all(inputData, N_best: 2, needTypoCorrection: false, preprocessedLattice: preprocessedLattice, dicdataStoreState: dicdataStoreState)
             } else {
                 // 制約がついている場合は高速になるので、N=3としている
-                draftResult = self.kana2lattice_all_with_prefix_constraint(inputData, N_best: 3, constraint: constraint, preprocessedLattice: preprocessedLattice)
+                draftResult = self.kana2lattice_all_with_prefix_constraint(inputData, N_best: 3, constraint: constraint, preprocessedLattice: preprocessedLattice, dicdataStoreState: dicdataStoreState)
             }
             if lattice.isEmpty {
                 // 初回のみ
@@ -176,7 +178,7 @@ extension Kana2Kanji {
                             } else if alternativeConstraint.probabilityRatio > 0.5 {
                                 // 十分に高い確率の場合、変換器を実際に呼び出して候補を作ってもらう
                                 lattice.resetNodeStates()
-                                let draftResult = self.kana2lattice_all_with_prefix_constraint(inputData, N_best: 3, constraint: PrefixConstraint(alternativeConstraint.prefixConstraint), preprocessedLattice: lattice)
+                                let draftResult = self.kana2lattice_all_with_prefix_constraint(inputData, N_best: 3, constraint: PrefixConstraint(alternativeConstraint.prefixConstraint), preprocessedLattice: lattice, dicdataStoreState: dicdataStoreState)
                                 let candidates = draftResult.result.getCandidateData().map(self.processClauseCandidate)
                                 let best: (Int, Candidate)? = candidates.enumerated().reduce(into: (Int, Candidate)?.none) { best, pair in
                                     if let (_, c) = best, pair.1.value > c.value {

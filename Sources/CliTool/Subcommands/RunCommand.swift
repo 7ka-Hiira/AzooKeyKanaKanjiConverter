@@ -35,7 +35,7 @@ extension Subcommands {
         static let configuration = CommandConfiguration(commandName: "run", abstract: "Show help for this utility.")
 
         @MainActor mutating func run() async {
-            let converter = KanaKanjiConverter()
+            let converter = KanaKanjiConverter.withDefaultDictionary()
             var composingText = ComposingText()
             composingText.insertAtCursorPosition(input, inputStyle: .direct)
             let result = converter.requestCandidates(composingText, options: requestOptions())
@@ -76,13 +76,11 @@ extension Subcommands {
             } else {
                 personalizationMode = nil
             }
-            var option: ConvertRequestOptions = .withDefaultDictionary(
+            var option: ConvertRequestOptions = .init(
                 N_best: self.onlyWholeConversion ? max(self.configNBest, self.displayTopN) : self.configNBest,
                 requireJapanesePrediction: !self.onlyWholeConversion && !self.disablePrediction,
                 requireEnglishPrediction: false,
                 keyboardLanguage: .ja_JP,
-                typographyLetterCandidate: false,
-                unicodeCandidate: true,
                 englishCandidateInRoman2KanaInput: true,
                 fullWidthRomanCandidate: false,
                 halfWidthKanaCandidate: false,
@@ -91,6 +89,8 @@ extension Subcommands {
                 shouldResetMemory: false,
                 memoryDirectoryURL: URL(fileURLWithPath: ""),
                 sharedContainerURL: URL(fileURLWithPath: ""),
+                textReplacer: .withDefaultEmojiDictionary(),
+                specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders,
                 zenzaiMode: self.zenzWeightPath.isEmpty ? .off : .on(weight: URL(string: self.zenzWeightPath)!, inferenceLimit: self.configZenzaiInferenceLimit, personalizationMode: personalizationMode),
                 metadata: .init(versionString: "anco for debugging")
             )

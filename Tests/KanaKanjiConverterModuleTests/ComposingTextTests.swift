@@ -10,7 +10,6 @@
 import XCTest
 
 final class ComposingTextTests: XCTestCase {
-
     func sequentialInput(_ composingText: inout ComposingText, sequence: String, inputStyle: InputStyle) {
         for char in sequence {
             composingText.insertAtCursorPosition(String(char), inputStyle: inputStyle)
@@ -67,7 +66,6 @@ final class ComposingTextTests: XCTestCase {
             ])
             XCTAssertEqual(c.convertTarget, "あかふぁ")
             XCTAssertEqual(c.convertTargetCursorPosition, 4)
-
         }
         // ローマ字の特殊ケース(促音)
         do {
@@ -177,7 +175,6 @@ final class ComposingTextTests: XCTestCase {
             XCTAssertEqual(c.convertTarget, "え")
             XCTAssertEqual(c.convertTargetCursorPosition, 1)
         }
-
     }
 
     func testDifferenceSuffix() throws {

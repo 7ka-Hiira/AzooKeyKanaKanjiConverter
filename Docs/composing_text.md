@@ -67,3 +67,19 @@ print(composingText.convertTarget)                // あお
 ### 置換
 
 専用のAPIはありません。削除と挿入で代用してください。
+
+## PCのキー入力を扱う（試験的）
+
+PCキーボードからの入力を、キーと修飾キーの組み合わせとして扱うために、内部的に `InputPiece.key(intention: Character?, modifiers: Set<Modifier>)` をサポートしています（現状の修飾は `shift` のみ）。
+
+カスタム入力テーブルでは `{shift 0}` と `{shift _}` の2トークンのみを特別扱いでサポートしており、それぞれ `.key(intention: "0", [.shift])`、`.key(intention: "_", [.shift])` に対応します。`ComposingText` に投入する場合は、以下のように `InputElement(piece: …, inputStyle: …)` を使います。
+
+```swift
+var c = ComposingText()
+let url = /* カスタムテーブルのURL */
+c.insertAtCursorPosition([
+    .init(piece: .key(intention: "0", modifiers: [.shift]), inputStyle: .mapped(id: .custom(url)))
+])
+```
+
+マッチングの優先順位は「キー規則（例: `{shift 0}`）」が「文字規則（例: `0`）」よりも優先されます。同じ意図文字を持つキー入力は、文字規則にもフォールバックして一致します。また、`{any character}` はキー入力の意図文字にも一致し、出力の `{any character}` に代入されます。

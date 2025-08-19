@@ -28,7 +28,7 @@ public struct ConvertRequestOptions: Sendable {
     ///   - textReplacer: 予測変換のための置換機を指定します。
     ///   - specialCandidateProviders: 特殊変換を実施する変換関数を挿入します
     ///   - metadata: メタデータを指定します。詳しくは`ConvertRequestOptions.Metadata`を参照してください。
-    public init(N_best: Int = 10, needTypoCorrection: Bool? = nil, requireJapanesePrediction: Bool, requireEnglishPrediction: Bool, keyboardLanguage: KeyboardLanguage, englishCandidateInRoman2KanaInput: Bool = false, fullWidthRomanCandidate: Bool = false, halfWidthKanaCandidate: Bool = false, learningType: LearningType, maxMemoryCount: Int = 65536, shouldResetMemory: Bool = false, dictionaryResourceURL: URL, memoryDirectoryURL: URL, sharedContainerURL: URL, textReplacer: TextReplacer, specialCandidateProviders: [any SpecialCandidateProvider]?, zenzaiMode: ZenzaiMode = .off, preloadDictionary: Bool = false, metadata: ConvertRequestOptions.Metadata?) {
+    public init(N_best: Int = 10, needTypoCorrection: Bool? = nil, requireJapanesePrediction: Bool, requireEnglishPrediction: Bool, keyboardLanguage: KeyboardLanguage, englishCandidateInRoman2KanaInput: Bool = false, fullWidthRomanCandidate: Bool = false, halfWidthKanaCandidate: Bool = false, learningType: LearningType, maxMemoryCount: Int = 65536, shouldResetMemory: Bool = false, memoryDirectoryURL: URL, sharedContainerURL: URL, textReplacer: TextReplacer, specialCandidateProviders: [any SpecialCandidateProvider]?, zenzaiMode: ZenzaiMode = .off, preloadDictionary: Bool = false, metadata: ConvertRequestOptions.Metadata?) {
         self.N_best = N_best
         self.needTypoCorrection = needTypoCorrection
         self.requireJapanesePrediction = requireJapanesePrediction
@@ -47,112 +47,10 @@ public struct ConvertRequestOptions: Sendable {
         self.specialCandidateProviders = specialCandidateProviders ?? KanaKanjiConverter.defaultSpecialCandidateProviders
         self.zenzaiMode = zenzaiMode
         self.preloadDictionary = preloadDictionary
-        self.dictionaryResourceURL = dictionaryResourceURL
-    }
 
-    /// 変換リクエストに必要な設定データ
-    ///
-    /// - parameters:
-    ///   - N_best: 変換候補の数。上位`N`件までの言語モデル上の妥当性を保証します。大きくすると計算量が増加します。
-    ///   - requireJapanesePrediction: 日本語の予測変換候補の必要性。`false`にすると、日本語の予測変換候補を出力しなくなります。
-    ///   - requireEnglishPrediction: 英語の予測変換候補の必要性。`false`にすると、英語の予測変換候補を出力しなくなります。ローマ字入力を用いた日本語入力では`false`にした方が良いでしょう。
-    ///   - keyboardLanguage: キーボードの言語を指定します。
-    ///   - typographyLetterCandidate: `true`の場合、「おしゃれなフォント」での英数字変換候補が出力に含まれるようになります。詳しくは`KanaKanjiConverter.typographicalCandidates(_:)`を参照してください。
-    ///   - unicodeCandidate: `true`の場合、`U+xxxx`のような入力に対してUnicodeの変換候補が出力に含まれるようになります。詳しくは`KanaKanjiConverter.unicodeCandidates(_:)`を参照してください。`
-    ///   - englishCandidateInRoman2KanaInput: `true`の場合、日本語ローマ字入力時に英語変換候補を出力します。`false`の場合、ローマ字入力時に英語変換候補を出力しません。
-    ///   - fullWidthRomanCandidate: `true`の場合、全角英数字の変換候補が出力に含まれるようになります。
-    ///   - halfWidthKanaCandidate: `true`の場合、半角カナの変換候補が出力に含まれるようになります。
-    ///   - learningType: 学習モードを指定します。詳しくは`LearningType`を参照してください。
-    ///   - maxMemoryCount: 学習が有効な場合に保持するデータの最大数を指定します。`0`の場合`learningType`を`nothing`に指定する方が適切です。
-    ///   - shouldResetMemory: `true`の場合、変換を開始する前に学習データをリセットします。
-    ///   - dictionaryResourceURL: 内蔵辞書データの読み出し先を指定します。
-    ///   - memoryDirectoryURL: 学習データの保存先を指定します。書き込み可能なディレクトリを指定してください。
-    ///   - sharedContainerURL: ユーザ辞書など、キーボード外で書き込んだ設定データの保存されているディレクトリを指定します。
-    ///   - textReplacer: 予測変換のための置換機を指定します。
-    ///   - metadata: メタデータを指定します。詳しくは`ConvertRequestOptions.Metadata`を参照してください。
-    @available(*, deprecated, message: "it be removed in AzooKeyKanaKanjiConverter v1.0")
-    public init(N_best: Int = 10, requireJapanesePrediction: Bool, requireEnglishPrediction: Bool, keyboardLanguage: KeyboardLanguage, typographyLetterCandidate: Bool = false, unicodeCandidate: Bool = true, englishCandidateInRoman2KanaInput: Bool = false, fullWidthRomanCandidate: Bool = false, halfWidthKanaCandidate: Bool = false, learningType: LearningType, maxMemoryCount: Int = 65536, shouldResetMemory: Bool = false, dictionaryResourceURL: URL, memoryDirectoryURL: URL, sharedContainerURL: URL, textReplacer: TextReplacer, zenzaiMode: ZenzaiMode = .off, preloadDictionary: Bool = false, metadata: ConvertRequestOptions.Metadata?) {
-
-        var specialCandidateProviders = [any SpecialCandidateProvider]()
-        if typographyLetterCandidate {
-            specialCandidateProviders.append(.typography)
+        if shouldResetMemory {
+            print("Warning: Passing `shouldResetMemory: true` in `ConvertRequestOptions` is deprecated. Use `KanaKanjiConverter.resetMemory` instead.")
         }
-        if unicodeCandidate {
-            specialCandidateProviders.append(.unicode)
-        }
-        specialCandidateProviders.append(.emailAddress)
-        specialCandidateProviders.append(.timeExpression)
-        specialCandidateProviders.append(.calendar)
-        specialCandidateProviders.append(.version)
-        specialCandidateProviders.append(.commaSeparatedNumber)
-
-        self.N_best = N_best
-        self.needTypoCorrection = nil
-        self.requireJapanesePrediction = requireJapanesePrediction
-        self.requireEnglishPrediction = requireEnglishPrediction
-        self.keyboardLanguage = keyboardLanguage
-        self.englishCandidateInRoman2KanaInput = englishCandidateInRoman2KanaInput
-        self.englishCandidateInRoman2KanaInput = englishCandidateInRoman2KanaInput
-        self.fullWidthRomanCandidate = fullWidthRomanCandidate
-        self.halfWidthKanaCandidate = halfWidthKanaCandidate
-        self.learningType = learningType
-        self.maxMemoryCount = maxMemoryCount
-        self.shouldResetMemory = shouldResetMemory
-        self.memoryDirectoryURL = memoryDirectoryURL
-        self.sharedContainerURL = sharedContainerURL
-        self.metadata = metadata
-        self.textReplacer = textReplacer
-        self.specialCandidateProviders = specialCandidateProviders
-        self.zenzaiMode = zenzaiMode
-        self.preloadDictionary = preloadDictionary
-        self.dictionaryResourceURL = dictionaryResourceURL
-    }
-
-    /// 変換リクエストに必要な設定データ
-    ///
-    /// - parameters:
-    ///   - N_best: 変換候補の数。上位`N`件までの言語モデル上の妥当性を保証します。大きくすると計算量が増加します。
-    ///   - requireJapanesePrediction: 日本語の予測変換候補の必要性。`false`にすると、日本語の予測変換候補を出力しなくなります。
-    ///   - requireEnglishPrediction: 英語の予測変換候補の必要性。`false`にすると、英語の予測変換候補を出力しなくなります。ローマ字入力を用いた日本語入力では`false`にした方が良いでしょう。
-    ///   - keyboardLanguage: キーボードの言語を指定します。
-    ///   - typographyLetterCandidate: `true`の場合、「おしゃれなフォント」での英数字変換候補が出力に含まれるようになります。詳しくは`KanaKanjiConverter.typographicalCandidates(_:)`を参照してください。
-    ///   - unicodeCandidate: `true`の場合、`U+xxxx`のような入力に対してUnicodeの変換候補が出力に含まれるようになります。詳しくは`KanaKanjiConverter.unicodeCandidates(_:)`を参照してください。`
-    ///   - englishCandidateInRoman2KanaInput: `true`の場合、日本語ローマ字入力時に英語変換候補を出力します。`false`の場合、ローマ字入力時に英語変換候補を出力しません。
-    ///   - fullWidthRomanCandidate: `true`の場合、全角英数字の変換候補が出力に含まれるようになります。
-    ///   - halfWidthKanaCandidate: `true`の場合、半角カナの変換候補が出力に含まれるようになります。
-    ///   - learningType: 学習モードを指定します。詳しくは`LearningType`を参照してください。
-    ///   - maxMemoryCount: 学習が有効な場合に保持するデータの最大数を指定します。`0`の場合`learningType`を`nothing`に指定する方が適切です。
-    ///   - shouldResetMemory: `true`の場合、変換を開始する前に学習データをリセットします。
-    ///   - dictionaryResourceURL: 内蔵辞書データの読み出し先を指定します。
-    ///   - memoryDirectoryURL: 学習データの保存先を指定します。書き込み可能なディレクトリを指定してください。
-    ///   - sharedContainerURL: ユーザ辞書など、キーボード外で書き込んだ設定データの保存されているディレクトリを指定します。
-    ///   - textReplacer: 予測変換のための置換機を指定します。
-    ///   - preloadDictionary: 辞書の事前読み込みを行うかどうかを指定します。
-    ///   - metadata: メタデータを指定します。詳しくは`ConvertRequestOptions.Metadata`を参照してください。
-    @available(*, deprecated, message: "it be removed in AzooKeyKanaKanjiConverter v1.0")
-    public init(N_best: Int = 10, requireJapanesePrediction: Bool, requireEnglishPrediction: Bool, keyboardLanguage: KeyboardLanguage, typographyLetterCandidate: Bool = false, unicodeCandidate: Bool = true, englishCandidateInRoman2KanaInput: Bool = false, fullWidthRomanCandidate: Bool = false, halfWidthKanaCandidate: Bool = false, learningType: LearningType, maxMemoryCount: Int = 65536, shouldResetMemory: Bool = false, dictionaryResourceURL: URL, memoryDirectoryURL: URL, sharedContainerURL: URL, zenzaiMode: ZenzaiMode = .off, preloadDictionary: Bool = false, metadata: ConvertRequestOptions.Metadata?) {
-        self.init(
-            N_best: N_best,
-            requireJapanesePrediction: requireJapanesePrediction,
-            requireEnglishPrediction: requireEnglishPrediction,
-            keyboardLanguage: keyboardLanguage,
-            typographyLetterCandidate: typographyLetterCandidate,
-            unicodeCandidate: unicodeCandidate,
-            englishCandidateInRoman2KanaInput: englishCandidateInRoman2KanaInput,
-            fullWidthRomanCandidate: fullWidthRomanCandidate,
-            halfWidthKanaCandidate: halfWidthKanaCandidate,
-            learningType: learningType,
-            maxMemoryCount: maxMemoryCount,
-            shouldResetMemory: shouldResetMemory,
-            dictionaryResourceURL: dictionaryResourceURL,
-            memoryDirectoryURL: memoryDirectoryURL,
-            sharedContainerURL: sharedContainerURL,
-            // MARK: using deprecated initializer here
-            textReplacer: TextReplacer(),
-            zenzaiMode: zenzaiMode,
-            preloadDictionary: preloadDictionary,
-            metadata: metadata
-        )
     }
 
     public var N_best: Int
@@ -172,7 +70,6 @@ public struct ConvertRequestOptions: Sendable {
     // ディレクトリなど
     public var memoryDirectoryURL: URL
     public var sharedContainerURL: URL
-    public var dictionaryResourceURL: URL
     /// providers to generate "special" candidates such as Unicode conversion.
     public var specialCandidateProviders: [any SpecialCandidateProvider]
     public var zenzaiMode: ZenzaiMode
@@ -194,8 +91,6 @@ public struct ConvertRequestOptions: Sendable {
             learningType: .inputAndOutput,
             maxMemoryCount: 65536,
             shouldResetMemory: false,
-            // dummy data, won't work
-            dictionaryResourceURL: Bundle.main.bundleURL,
             // dummy data, won't work
             memoryDirectoryURL: (try? FileManager.default.url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: false)) ?? Bundle.main.bundleURL,
             // dummy data, won't work
@@ -229,24 +124,35 @@ public struct ConvertRequestOptions: Sendable {
     }
 
     public struct ZenzaiV2DependentMode: Sendable, Equatable, Hashable {
-        public init(profile: String? = nil, leftSideContext: String? = nil) {
+        public init(profile: String? = nil, leftSideContext: String? = nil, maxLeftSideContextLength: Int? = nil) {
             self.profile = profile
             self.leftSideContext = leftSideContext
+            self.maxLeftSideContextLength = maxLeftSideContextLength
         }
 
         /// プロフィールコンテクストを設定した場合、プロフィールを反映したプロンプトが自動的に付与されます。プロフィールは10〜20文字程度の長さにとどめることを推奨します。
         public var profile: String?
         /// 左側の文字列を文脈として与えます。
         public var leftSideContext: String?
+        /// 文脈の最大長を制約します
+        public var maxLeftSideContextLength: Int?
     }
 
     public struct ZenzaiV3DependentMode: Sendable, Equatable, Hashable {
-        public init(profile: String? = nil, topic: String? = nil, style: String? = nil, preference: String? = nil, leftSideContext: String? = nil) {
+        public init(
+            profile: String? = nil,
+            topic: String? = nil,
+            style: String? = nil,
+            preference: String? = nil,
+            leftSideContext: String? = nil,
+            maxLeftSideContextLength: Int? = nil
+        ) {
             self.profile = profile
             self.topic = topic
             self.style = style
             self.preference = preference
             self.leftSideContext = leftSideContext
+            self.maxLeftSideContextLength = maxLeftSideContextLength
         }
 
         /// プロフィールコンテクストを設定した場合、プロフィールを反映したプロンプトが自動的に付与されます。プロフィールは10〜20文字程度の長さにとどめることを推奨します。
@@ -259,6 +165,8 @@ public struct ConvertRequestOptions: Sendable {
         public var preference: String?
         /// 左側の文字列を文脈として与えます。
         public var leftSideContext: String?
+        /// 文脈の最大長を制約します
+        public var maxLeftSideContextLength: Int?
     }
 
     public enum ZenzVersion: Sendable, Equatable, Hashable {
