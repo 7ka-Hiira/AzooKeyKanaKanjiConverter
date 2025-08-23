@@ -109,8 +109,8 @@ public final class InputStyleManager {
         return result
     }
 
-    private static func loadTable(from urls: [URL]) throws -> InputTable {
-      let content = try urls.map { try String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+    private static func loadTable(from url: URL) throws -> InputTable {
+        let content = try String(contentsOf: url, encoding: .utf8)
         var map: [[InputTable.KeyElement]: [InputTable.ValueElement]] = [:]
         for line in content.components(separatedBy: .newlines) {
             // 空行は無視

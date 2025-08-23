@@ -6,5 +6,5 @@ public enum InputTableID: Sendable, Equatable, Hashable {
     case defaultKanaJIS
     case defaultKanaUS
     case empty
-    case custom([URL])
+    case custom(URL)
 }
