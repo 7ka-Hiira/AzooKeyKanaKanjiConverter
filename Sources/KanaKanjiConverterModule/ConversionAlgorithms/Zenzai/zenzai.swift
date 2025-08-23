@@ -57,16 +57,18 @@ extension Kana2Kanji {
     }
 
     struct PrefixConstraint: Sendable, Equatable, Hashable, CustomStringConvertible {
-        init(_ constraint: [UInt8], hasEOS: Bool = false) {
+        init(_ constraint: [UInt8], hasEOS: Bool = false, ignoreMemoryAndUserDictionary: Bool = false) {
             self.constraint = constraint
             self.hasEOS = hasEOS
+            self.ignoreMemoryAndUserDictionary = ignoreMemoryAndUserDictionary
         }
 
         var constraint: [UInt8]
         var hasEOS: Bool
+        var ignoreMemoryAndUserDictionary: Bool
 
         var description: String {
-            "PrefixConstraint(constraint: \"\(String(decoding: self.constraint, as: UTF8.self))\", hasEOS: \(self.hasEOS))"
+            "PrefixConstraint(constraint: \"\(String(decoding: self.constraint, as: UTF8.self))\", hasEOS: \(self.hasEOS), ignoreMemoryAndUserDictionary: \(self.ignoreMemoryAndUserDictionary))"
         }
 
         var isEmpty: Bool {
@@ -230,14 +232,27 @@ extension Kana2Kanji {
             debug("passed:", score)
             return .return(constraint: constraint, alternativeConstraints: alternativeConstraints, satisfied: true)
         case .fixRequired(let prefixConstraint):
-            // 同じ制約が2回連続で出てきたら諦める
             if constraint.constraint == prefixConstraint {
-                debug("same constraint:", prefixConstraint)
-                return .return(constraint: PrefixConstraint([]), alternativeConstraints: [], satisfied: false)
+                if !constraint.ignoreMemoryAndUserDictionary, candidates[candidateIndex].data.contains(where: { !$0.metadata.isDisjoint(with: [.isLearned, .isFromUserDictionary])}) {
+                    // `ignoreMemoryAndUserDictionary`でない場合、学習候補がモデルにリジェクトされた可能性を検討する
+                    debug("same constraint (fixRequired), but retry without memory and user dictionary:", prefixConstraint)
+                    constraint.ignoreMemoryAndUserDictionary = true
+                    for (i, candidate) in candidates.indexed() where i != candidateIndex {
+                        if candidate.text.utf8.hasPrefix(prefixConstraint) && self.heuristicRetryValidation(candidate.text) {
+                            debug("found \(candidate.text) as another retry")
+                            return .retry(candidateIndex: i)
+                        }
+                    }
+                    return .continue
+                } else {
+                    // それ以外の場合で同じ制約が2回連続で出てきたら諦める
+                    debug("same constraint (fixRequired):", prefixConstraint)
+                    return .return(constraint: PrefixConstraint([]), alternativeConstraints: [], satisfied: false)
+                }
             }
             // 制約が得られたので、更新する
             let isIncrementalUpdate = prefixConstraint.hasPrefix(constraint.constraint)
-            constraint = PrefixConstraint(prefixConstraint)
+            constraint = PrefixConstraint(prefixConstraint, ignoreMemoryAndUserDictionary: constraint.ignoreMemoryAndUserDictionary)
             debug("update constraint:", constraint)
             if isIncrementalUpdate {
                 // もし制約を満たす候補があるならそれを使って再レビューチャレンジを戦うことで、推論を減らせる
@@ -252,11 +267,25 @@ extension Kana2Kanji {
             }
             return .continue
         case .wholeResult(let wholeConstraint):
-            let newConstraint = PrefixConstraint(Array(wholeConstraint.utf8), hasEOS: true)
+            let newConstraint = PrefixConstraint(Array(wholeConstraint.utf8), hasEOS: true, ignoreMemoryAndUserDictionary: constraint.ignoreMemoryAndUserDictionary)
             // 同じ制約が2回連続で出てきたら諦める
             if constraint == newConstraint {
-                debug("same constraint:", constraint)
-                return .return(constraint: PrefixConstraint([]), alternativeConstraints: [], satisfied: false)
+                if !constraint.ignoreMemoryAndUserDictionary, candidates[candidateIndex].data.contains(where: { !$0.metadata.isDisjoint(with: [.isLearned, .isFromUserDictionary])}) {
+                    // `ignoreMemoryAndUserDictionary`でない場合、学習候補がモデルにリジェクトされた可能性を検討する
+                    debug("same constraint (wholeResult), but retry without memory and user dictionary:", constraint)
+                    constraint.ignoreMemoryAndUserDictionary = true
+                    for (i, candidate) in candidates.indexed() where i != candidateIndex {
+                        if candidate.text.utf8.elementsEqual(wholeConstraint.utf8) && self.heuristicRetryValidation(candidate.text) {
+                            debug("found \(candidate.text) as another retry")
+                            return .retry(candidateIndex: i)
+                        }
+                    }
+                    return .continue
+                } else {
+                    // それ以外の場合で同じ制約が2回連続で出てきたら諦める
+                    debug("same constraint (wholeResult):", constraint)
+                    return .return(constraint: PrefixConstraint([]), alternativeConstraints: [], satisfied: false)
+                }
             }
             // 制約が得られたので、更新する
             debug("update whole constraint:", wholeConstraint)

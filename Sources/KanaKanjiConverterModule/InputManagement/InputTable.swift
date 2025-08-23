@@ -81,29 +81,34 @@ private indirect enum TrieNode {
     }
 }
 
-struct InputTable: Sendable {
-    static let empty = InputTable(pieceHiraganaChanges: [:])
+public struct InputTable: Sendable {
+    public static let empty = InputTable(baseMapping: [:])
+    public static let defaultRomanToKana = InputTable(baseMapping: InputTables.defaultRomanToKanaPieceMap)
+    public static let defaultAZIK = InputTable(baseMapping: InputTables.defaultAzikPieceMap)
+    public static let defaultKanaJIS = InputTable(baseMapping: InputTables.defaultKanaJISPieceMap)
+    public static let defaultKanaUS = InputTable(baseMapping: InputTables.defaultKanaUSPieceMap)
 
     /// Suffix‑oriented trie used for O(m) longest‑match lookup.
-    enum KeyElement: Sendable, Equatable, Hashable {
+    public enum KeyElement: Sendable, Equatable, Hashable {
         case piece(InputPiece)
         case any1
     }
 
-    enum ValueElement: Sendable, Equatable, Hashable {
+    public enum ValueElement: Sendable, Equatable, Hashable {
         case character(Character)
         case any1
     }
 
-    init(pieceHiraganaChanges: [[KeyElement]: [ValueElement]]) {
-        self.unstableSuffixes = pieceHiraganaChanges.keys.flatMapSet { pieces in
+    public init(baseMapping: [[KeyElement]: [ValueElement]]) {
+        self.baseMapping = baseMapping
+        self.unstableSuffixes = baseMapping.keys.flatMapSet { pieces in
             pieces.indices.map { i in
                 pieces[...i].compactMap { element in
                     if case let .piece(piece) = element, case let .character(c) = piece { c } else { nil }
                 }
             }
         }
-        let katakanaChanges: [String: String] = Dictionary(uniqueKeysWithValues: pieceHiraganaChanges.compactMap { key, value -> (String, String)? in
+        let katakanaChanges: [String: String] = Dictionary(uniqueKeysWithValues: baseMapping.compactMap { key, value -> (String, String)? in
             let chars = key.compactMap { element -> Character? in
                 if case let .piece(piece) = element, case let .character(c) = piece { c } else { nil }
             }
@@ -113,7 +118,7 @@ struct InputTable: Sendable {
             }
             return (String(chars), String(valueChars).toKatakana())
         })
-        self.maxKeyCount = pieceHiraganaChanges.keys.map { $0.count }.max() ?? 0
+        self.maxKeyCount = baseMapping.keys.map { $0.count }.max() ?? 0
         self.possibleNexts = {
             var results: [String: [String]] = [:]
             for (key, value) in katakanaChanges {
@@ -125,13 +130,14 @@ struct InputTable: Sendable {
             return results
         }()
         var root: TrieNode = .node(output: nil, charChildren: [:], separatorChild: nil, any1Child: nil, keyChildren: [:])
-        for (key, value) in pieceHiraganaChanges {
+        for (key, value) in baseMapping {
             root.add(reversedKey: key.reversed().map { $0 }, output: value)
         }
         self.trieRoot = root
         self.maxUnstableSuffixLength = self.unstableSuffixes.map { $0.count }.max() ?? 0
     }
 
+    let baseMapping: [[KeyElement]: [ValueElement]]
     let unstableSuffixes: Set<[Character]>
     // Fast bound to avoid scanning entire set when checking suffixes
     let maxUnstableSuffixLength: Int
@@ -251,29 +257,10 @@ struct InputTable: Sendable {
     /// The algorithm walks the suffix‑trie from the newly added piece
     /// backwards, examining at most `maxKeyCount` pieces, and keeps the
     /// longest match.
-    func toHiragana(currentText: [Character], added: InputPiece) -> [Character] {
-        // Greedy match without temporary array allocation.
-        let bestMatch = Self.matchGreedy(root: self.trieRoot, buffer: currentText, added: added, maxKeyCount: self.maxKeyCount)
-
-        // Apply the result or fall back to passthrough behaviour.
-        if let (bestNode, bestState, matchedDepth) = bestMatch, let kana = bestNode.outputValue(state: bestState) {
-            // `matchedDepth` includes `added`, so drop `matchedDepth - 1` chars.
-            return Array(currentText.dropLast(matchedDepth - 1)) + kana
-        }
-
-        // In case where no match found
-        switch added {
-        case .character(let ch):
-            return currentText + [ch]
-        case .compositionSeparator:
-            return currentText
-        case .key(let intention, _):
-            if let ch = intention {
-                return currentText + [ch]
-            } else {
-                return currentText
-            }
-        }
+    func applied(currentText: [Character], added: InputPiece) -> [Character] {
+        var currentText = currentText
+        self.apply(to: &currentText, added: added)
+        return currentText
     }
 
     /// In‑place variant: mutates `buffer` and returns deleted count.
@@ -306,5 +293,23 @@ struct InputTable: Sendable {
             }
         }
         return 0
+    }
+}
+
+public extension InputTable {
+    enum Ordering {
+        case lastInputWins
+    }
+    init(tables: [InputTable], order: Ordering) {
+        var map: [[KeyElement]: [ValueElement]] = [:]
+        switch order {
+        case .lastInputWins:
+            for table in tables {
+                for (k, v) in table.baseMapping {
+                    map[k] = v
+                }
+            }
+        }
+        self.init(baseMapping: map)
     }
 }

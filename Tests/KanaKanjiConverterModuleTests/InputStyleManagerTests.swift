@@ -6,24 +6,24 @@ final class InputStyleManagerTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("custom.tsv")
         try "a\tあ\nka\tか\n".write(to: url, atomically: true, encoding: .utf8)
         let table = InputStyleManager.shared.table(for: .custom(url))
-        XCTAssertEqual(table.toHiragana(currentText: [], added: .character("a")), Array("あ"))
-        XCTAssertEqual(table.toHiragana(currentText: ["k"], added: .character("a")), Array("か"))
+        XCTAssertEqual(table.applied(currentText: [], added: .character("a")), Array("あ"))
+        XCTAssertEqual(table.applied(currentText: ["k"], added: .character("a")), Array("か"))
     }
 
     func testCustomTableLoadingWithBlankLines() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("custom.tsv")
         try "a\tあ\n\n\nka\tか\n".write(to: url, atomically: true, encoding: .utf8)
         let table = InputStyleManager.shared.table(for: .custom(url))
-        XCTAssertEqual(table.toHiragana(currentText: [], added: .character("a")), Array("あ"))
-        XCTAssertEqual(table.toHiragana(currentText: ["k"], added: .character("a")), Array("か"))
+        XCTAssertEqual(table.applied(currentText: [], added: .character("a")), Array("あ"))
+        XCTAssertEqual(table.applied(currentText: ["k"], added: .character("a")), Array("か"))
     }
 
     func testCustomTableLoadingWithCommentLines() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("custom.tsv")
         try "a\tあ\n# here is comment\nka\tか\n".write(to: url, atomically: true, encoding: .utf8)
         let table = InputStyleManager.shared.table(for: .custom(url))
-        XCTAssertEqual(table.toHiragana(currentText: [], added: .character("a")), Array("あ"))
-        XCTAssertEqual(table.toHiragana(currentText: ["k"], added: .character("a")), Array("か"))
+        XCTAssertEqual(table.applied(currentText: [], added: .character("a")), Array("あ"))
+        XCTAssertEqual(table.applied(currentText: ["k"], added: .character("a")), Array("か"))
     }
 
     func testCustomTableLoadingWithSpecialTokens() throws {
@@ -36,10 +36,19 @@ final class InputStyleManagerTests: XCTestCase {
         try lines.write(to: url, atomically: true, encoding: .utf8)
         let table = InputStyleManager.shared.table(for: .custom(url))
         // n<any> -> ん<any>
-        XCTAssertEqual(table.toHiragana(currentText: ["n"], added: .character("a")), Array("んa"))
+        XCTAssertEqual(table.applied(currentText: ["n"], added: .character("a")), Array("んa"))
         // n followed by end-of-text -> ん
-        XCTAssertEqual(table.toHiragana(currentText: ["n"], added: .compositionSeparator), Array("ん"))
+        XCTAssertEqual(table.applied(currentText: ["n"], added: .compositionSeparator), Array("ん"))
         // "{" then "}" -> "{}"
-        XCTAssertEqual(table.toHiragana(currentText: ["{"], added: .character("}")), Array("{}"))
+        XCTAssertEqual(table.applied(currentText: ["{"], added: .character("}")), Array("{}"))
+    }
+    func testTableRegisteration() throws {
+        InputStyleManager.registerInputStyle(table: InputTable(baseMapping: [
+            [.piece(.character("k")), .piece(.character("a"))]: [.character("か")]
+        ]), for: "か")
+        var c = ComposingText()
+        c.insertAtCursorPosition([.init(character: "k", inputStyle: .mapped(id: .tableName("か")))])
+        c.insertAtCursorPosition([.init(character: "a", inputStyle: .mapped(id: .tableName("か")))])
+        XCTAssertEqual(c.convertTarget, "か")
     }
 }

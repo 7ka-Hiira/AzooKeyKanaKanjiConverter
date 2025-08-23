@@ -146,7 +146,7 @@ extension Kana2Kanji {
                     let cLen = constraintBytes.count
                     for index in node.prevs.indices {
                         // 学習データやユーザ辞書由来の場合は素通しする
-                        if node.data.metadata.isDisjoint(with: [.isLearned, .isFromUserDictionary]) {
+                        if !constraint.ignoreMemoryAndUserDictionary, node.data.metadata.isDisjoint(with: [.isLearned, .isFromUserDictionary]) {
                             let (matched, total) = mtPerPrev[index]
                             // 最終チェック（EOS時の条件に合わせる）
                             let condition = if constraint.hasEOS {
@@ -186,7 +186,7 @@ extension Kana2Kanji {
                             // 制約 AB 単語 A   (OK)
                             // 制約 AB 単語 AC  (NG)
                             // ただし、学習データやユーザ辞書由来の場合は素通しする
-                            if nextnode.data.metadata.isDisjoint(with: [.isLearned, .isFromUserDictionary]) {
+                            if !constraint.ignoreMemoryAndUserDictionary, nextnode.data.metadata.isDisjoint(with: [.isLearned, .isFromUserDictionary]) {
                                 let (matchedPrev, totalPrev) = mtPerPrev[index]
                                 // ensure no prior mismatch
                                 guard matchedPrev == min(totalPrev, cLen) else {

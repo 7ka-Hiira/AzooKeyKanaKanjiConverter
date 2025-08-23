@@ -7,4 +7,5 @@ public enum InputTableID: Sendable, Equatable, Hashable {
     case defaultKanaUS
     case empty
     case custom(URL)
+    case tableName(String)
 }

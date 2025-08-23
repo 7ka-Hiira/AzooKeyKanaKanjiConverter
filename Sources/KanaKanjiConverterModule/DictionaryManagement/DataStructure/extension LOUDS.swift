@@ -38,7 +38,7 @@ extension LOUDS {
     }
     private static func loadLOUDSBinary(from url: URL) -> [UInt64]? {
         do {
-            let binaryData = try Data(contentsOf: url, options: [.uncached]) // 2度読み込むことはないのでキャッシュ不要
+            let binaryData = try Data(contentsOf: url, options: [.uncached, .mappedIfSafe]) // 2度読み込むことはないのでキャッシュ不要
             return binaryData.toArray(of: UInt64.self)
         } catch {
             debug(error)
@@ -73,6 +73,14 @@ extension LOUDS {
         return load(charsURL: charsURL, loudsURL: loudsURL)
     }
 
+    package static func loadUserShortcuts(userDictionaryURL: URL) -> LOUDS? {
+        let (charsURL, loudsURL) = (
+            userDictionaryURL.appending(path: "user_shortcuts.loudschars2", directoryHint: .notDirectory),
+            userDictionaryURL.appending(path: "user_shortcuts.louds", directoryHint: .notDirectory)
+        )
+        return load(charsURL: charsURL, loudsURL: loudsURL)
+    }
+
     private static func load(charsURL: URL, loudsURL: URL) -> LOUDS? {
         let nodeIndex2ID: [UInt8]
         do {
@@ -89,7 +97,7 @@ extension LOUDS {
     }
 
     @inlinable
-    static func parseBinary(binary: Data) -> [DicdataElement] {
+    static func parseBinary(binary: borrowing Data) -> [DicdataElement] {
         // Fast parse without intermediate toArray allocations
         let count = Int(readUInt16LE(binary, 0))
         var offset = 2
@@ -108,36 +116,70 @@ extension LOUDS {
         }
 
         let strStart = binary.index(binary.startIndex, offsetBy: offset)
-        let substrings = binary[strStart...].split(separator: UInt8(ascii: "\t"), omittingEmptySubsequences: false)
-        guard let ruby = String(data: substrings.first ?? Data(), encoding: .utf8) else {
-            debug("getDataForLoudstxt3: failed to parse", dicdata)
-            return []
-        }
+        var rangeStart = strStart
+        var ruby: String = ""
         var i = dicdata.startIndex
-        // Skip the first (ruby) field
-        for substring in substrings.dropFirst() {
-            if i == dicdata.endIndex { break }
-            guard let word = String(data: substring, encoding: .utf8) else {
-                debug("getDataForLoudstxt3: failed to parse", ruby)
-                i = dicdata.index(after: i)
-                continue
+
+        binary.withUnsafeBytes { (rawBuffer: UnsafeRawBufferPointer) in
+            let ptr = rawBuffer.bindMemory(to: UInt8.self).baseAddress!
+            let count = binary.count
+            var offset = strStart + 1 - binary.startIndex
+            while offset <= count {
+                if offset == count || ptr[offset] == UInt8(ascii: "\t") {
+                    // Compute numeric start relative to base
+                    let startInt = rangeStart - binary.startIndex
+                    let length = offset - startInt
+                    let isFirstField = (rangeStart == strStart)
+                    let isEmptyField = (length == 0)
+
+                    if isFirstField {
+                        let rb = UnsafeBufferPointer(start: ptr + startInt, count: length)
+                        ruby = String(decoding: rb, as: UTF8.self)
+                    } else if isEmptyField {
+                        withMutableValue(&dicdata[i]) {
+                            $0.ruby = ruby
+                            $0.word = ruby
+                        }
+                        i = dicdata.index(after: i)
+                    } else {
+                        let wb = UnsafeBufferPointer(start: ptr + startInt, count: length)
+                        let word = String(decoding: wb, as: UTF8.self)
+                        withMutableValue(&dicdata[i]) {
+                            $0.ruby = ruby
+                            $0.word = word
+                        }
+                        i = dicdata.index(after: i)
+                    }
+                    rangeStart = binary.startIndex + offset + 1
+                    offset += 1
+                } else {
+                    offset += 1
+                }
             }
-            withMutableValue(&dicdata[i]) {
-                $0.ruby = ruby
-                $0.word = word.isEmpty ? ruby : word
-            }
-            i = dicdata.index(after: i)
         }
         return dicdata
     }
 
     static func getUserDictionaryDataForLoudstxt3(_ identifier: String, indices: [Int], cache: Data? = nil, userDictionaryURL: URL) -> [DicdataElement] {
         if let cache {
-            return Self.paresLoudstxt3Binary(binary: cache, indices: indices)
+            return Self.parseLoudstxt3Binary(binary: cache, indices: indices)
         }
         do {
             let url = userDictionaryURL.appendingPathComponent("\(identifier).loudstxt3", isDirectory: false)
-            return Self.paresLoudstxt3Binary(binary: try Data(contentsOf: url), indices: indices)
+            return Self.parseLoudstxt3Binary(binary: try Data(contentsOf: url), indices: indices)
+        } catch {
+            debug(#function, error)
+            return []
+        }
+    }
+
+    static func getUserShortcutsDataForLoudstxt3(_ identifier: String, indices: [Int], cache: Data? = nil, userDictionaryURL: URL) -> [DicdataElement] {
+        if let cache {
+            return Self.parseLoudstxt3Binary(binary: cache, indices: indices)
+        }
+        do {
+            let url = userDictionaryURL.appendingPathComponent("\(identifier).loudstxt3", isDirectory: false)
+            return Self.parseLoudstxt3Binary(binary: try Data(contentsOf: url), indices: indices)
         } catch {
             debug(#function, error)
             return []
@@ -146,11 +188,11 @@ extension LOUDS {
 
     static func getMemoryDataForLoudstxt3(_ identifier: String, indices: [Int], cache: Data? = nil, memoryURL: URL) -> [DicdataElement] {
         if let cache {
-            return Self.paresLoudstxt3Binary(binary: cache, indices: indices)
+            return Self.parseLoudstxt3Binary(binary: cache, indices: indices)
         }
         do {
             let url = memoryURL.appendingPathComponent("\(identifier).loudstxt3", isDirectory: false)
-            return Self.paresLoudstxt3Binary(binary: try Data(contentsOf: url), indices: indices)
+            return Self.parseLoudstxt3Binary(binary: try Data(contentsOf: url), indices: indices)
         } catch {
             debug(#function, error)
             return []
@@ -159,18 +201,18 @@ extension LOUDS {
 
     static func getDataForLoudstxt3(_ identifier: String, indices: [Int], cache: Data? = nil, dictionaryURL: URL) -> [DicdataElement] {
         if let cache {
-            return Self.paresLoudstxt3Binary(binary: cache, indices: indices)
+            return Self.parseLoudstxt3Binary(binary: cache, indices: indices)
         }
         do {
             let url = dictionaryURL.appendingPathComponent("louds/\(identifier).loudstxt3", isDirectory: false)
-            return Self.paresLoudstxt3Binary(binary: try Data(contentsOf: url), indices: indices)
+            return Self.parseLoudstxt3Binary(binary: try Data(contentsOf: url, options: [.mappedIfSafe]), indices: indices)
         } catch {
             debug(#function, error)
             return []
         }
     }
 
-    private static func paresLoudstxt3Binary(binary: Data, indices: [Int]) -> [DicdataElement] {
+    private static func parseLoudstxt3Binary(binary: borrowing Data, indices: [Int]) -> [DicdataElement] {
         let lc: Int = Int(readUInt16LE(binary, 0))
         // Header table of UInt32 offsets starts at byte 2
         var out: [DicdataElement] = []

@@ -206,7 +206,21 @@ public struct ComposingText: Sendable {
         if elements.isEmpty {
             return
         }
-        let inputCursorPosition = self.forceGetInputCursorPosition(targetSurfaceIndex: convertTargetCursorPosition)
+        var elements = elements
+        var inputCursorPosition = self.forceGetInputCursorPosition(targetSurfaceIndex: convertTargetCursorPosition)
+        // カーソルが右端にない場合、右側に変換の影響が及ぶのを防ぐためelements終端にfrozenのcompositionSeparatorを足す
+        if !self.isAtEndIndex {
+            elements.append(InputElement(piece: .compositionSeparator, inputStyle: .frozen))
+        }
+        // すでにcompositionSeparatorが左にあるときは削除してinputCursorPositionを更新
+        let leftInputIndex = inputCursorPosition - 1
+        if leftInputIndex >= 0 && leftInputIndex < input.count {
+            let leftElement = input[leftInputIndex]
+            if leftElement.piece == .compositionSeparator && leftElement.inputStyle == .frozen {
+                input.remove(at: leftInputIndex)
+                inputCursorPosition = leftInputIndex
+            }
+        }
         // input, convertTarget, convertTargetCursorPositionの3つを更新する
         // inputを更新
         self.input.insert(contentsOf: elements, at: inputCursorPosition)
@@ -279,7 +293,16 @@ public struct ComposingText: Sendable {
         let inputCursorPosition = self.forceGetInputCursorPosition(targetSurfaceIndex: self.convertTargetCursorPosition)
 
         // inputを更新する
-        self.input.removeSubrange(targetCursorPosition ..< inputCursorPosition)
+        if targetCursorPosition == 0 || inputCursorPosition == input.count {
+            self.input.removeSubrange(targetCursorPosition ..< inputCursorPosition)
+        } else {
+            // 削除範囲が先頭または終端に位置しない場合
+            // 削除の結果新しい変換が起きないように.frozenのcompositionSeparatorと置換する
+            self.input.replaceSubrange(
+                targetCursorPosition ..< inputCursorPosition,
+                with: [InputElement(piece: .compositionSeparator, inputStyle: .frozen)]
+            )
+        }
         // カーソルを更新する
         self.convertTargetCursorPosition -= count
 
@@ -388,48 +411,41 @@ extension ComposingText {
     @inline(__always)
     @discardableResult
     static func updateConvertTargetElements(currentElements: inout [ConvertTargetElement], newElement: InputElement) -> Int {
-        switch newElement.piece {
-        case .character, .key:
-            if currentElements.isEmpty {
-                let table: InputTable? = {
-                    switch newElement.inputStyle {
-                    case .direct: return nil
-                    case .roman2kana: return InputStyleManager.shared.table(for: .defaultRomanToKana)
-                    case .mapped(let id): return InputStyleManager.shared.table(for: id)
-                    }
-                }()
-                let s = initializeConvertTarget(cachedTable: table, initialPiece: newElement.piece)
-                currentElements.append(
-                    ConvertTargetElement(string: s, inputStyle: newElement.inputStyle, cachedTable: table)
-                )
-                return 0
+        if currentElements.isEmpty {
+            switch newElement.piece {
+            case .compositionSeparator: return 0
+            case .character, .key: break
             }
-            let lastIndex = currentElements.count - 1
-            if currentElements[lastIndex].inputStyle == newElement.inputStyle {
-                let table = currentElements[lastIndex].cachedTable
-                return updateConvertTarget(&currentElements[lastIndex].string, cachedTable: table, piece: newElement.piece)
-            } else {
-                let table: InputTable? = {
-                    switch newElement.inputStyle {
-                    case .direct: return nil
-                    case .roman2kana: return InputStyleManager.shared.table(for: .defaultRomanToKana)
-                    case .mapped(let id): return InputStyleManager.shared.table(for: id)
-                    }
-                }()
-                let s = initializeConvertTarget(cachedTable: table, initialPiece: newElement.piece)
-                currentElements.append(
-                    ConvertTargetElement(string: s, inputStyle: newElement.inputStyle, cachedTable: table)
-                )
-                return 0
-            }
-        case .compositionSeparator:
-            if currentElements.isEmpty {
-                return 0
-            }
-            let lastIndex = currentElements.count - 1
-            guard currentElements[lastIndex].inputStyle == newElement.inputStyle else { return 0 }
+            let table: InputTable? = {
+                switch newElement.inputStyle {
+                case .direct: return nil
+                case .roman2kana: return InputStyleManager.shared.table(for: .defaultRomanToKana)
+                case .mapped(let id): return InputStyleManager.shared.table(for: id)
+                }
+            }()
+            let s = initializeConvertTarget(cachedTable: table, initialPiece: newElement.piece)
+            currentElements.append(
+                ConvertTargetElement(string: s, inputStyle: newElement.inputStyle, cachedTable: table)
+            )
+            return 0
+        }
+        let lastIndex = currentElements.count - 1
+        if currentElements[lastIndex].inputStyle == newElement.inputStyle {
             let table = currentElements[lastIndex].cachedTable
-            return updateConvertTarget(&currentElements[lastIndex].string, cachedTable: table, piece: .compositionSeparator)
+            return updateConvertTarget(&currentElements[lastIndex].string, cachedTable: table, piece: newElement.piece)
+        } else {
+            let table: InputTable? = {
+                switch newElement.inputStyle {
+                case .direct: return nil
+                case .roman2kana: return InputStyleManager.shared.table(for: .defaultRomanToKana)
+                case .mapped(let id): return InputStyleManager.shared.table(for: id)
+                }
+            }()
+            let s = initializeConvertTarget(cachedTable: table, initialPiece: newElement.piece)
+            currentElements.append(
+                ConvertTargetElement(string: s, inputStyle: newElement.inputStyle, cachedTable: table)
+            )
+            return 0
         }
     }
 

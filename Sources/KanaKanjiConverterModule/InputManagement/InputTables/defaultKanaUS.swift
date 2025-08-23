@@ -34,6 +34,7 @@ extension InputTables {
         "o": "ら",
         "p": "せ",
         "』": "ー",
+        "」": "む",
         "＼": "へ",
 
         // Shift

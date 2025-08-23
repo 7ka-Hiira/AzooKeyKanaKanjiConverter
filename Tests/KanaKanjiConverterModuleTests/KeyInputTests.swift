@@ -13,8 +13,8 @@ final class KeyInputTests: XCTestCase {
 
         let table = InputStyleManager.shared.table(for: .custom(url))
 
-        XCTAssertEqual(table.toHiragana(currentText: [], added: .key(intention: "0", modifiers: [.shift])), Array("あ"))
-        XCTAssertEqual(table.toHiragana(currentText: [], added: .character("0")), Array("い"))
+        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "0", modifiers: [.shift])), Array("あ"))
+        XCTAssertEqual(table.applied(currentText: [], added: .character("0")), Array("い"))
     }
 
     func testKeyRuleOnly() throws {
@@ -24,8 +24,8 @@ final class KeyInputTests: XCTestCase {
 
         let table = InputStyleManager.shared.table(for: .custom(url))
 
-        XCTAssertEqual(table.toHiragana(currentText: [], added: .key(intention: "0", modifiers: [.shift])), Array("A"))
-        XCTAssertEqual(table.toHiragana(currentText: [], added: .character("0")), Array("0"))
+        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "0", modifiers: [.shift])), Array("A"))
+        XCTAssertEqual(table.applied(currentText: [], added: .character("0")), Array("0"))
     }
 
     func testCharacterRuleOnly() throws {
@@ -35,8 +35,8 @@ final class KeyInputTests: XCTestCase {
 
         let table = InputStyleManager.shared.table(for: .custom(url))
 
-        XCTAssertEqual(table.toHiragana(currentText: [], added: .key(intention: "0", modifiers: [.shift])), Array("Z"))
-        XCTAssertEqual(table.toHiragana(currentText: [], added: .character("0")), Array("Z"))
+        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "0", modifiers: [.shift])), Array("Z"))
+        XCTAssertEqual(table.applied(currentText: [], added: .character("0")), Array("Z"))
     }
 
     func testShiftUnderscorePriority() throws {
@@ -50,8 +50,8 @@ final class KeyInputTests: XCTestCase {
 
         let table = InputStyleManager.shared.table(for: .custom(url))
 
-        XCTAssertEqual(table.toHiragana(currentText: [], added: .key(intention: "_", modifiers: [.shift])), Array("X"))
-        XCTAssertEqual(table.toHiragana(currentText: [], added: .character("_")), Array("Y"))
+        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "_", modifiers: [.shift])), Array("X"))
+        XCTAssertEqual(table.applied(currentText: [], added: .character("_")), Array("Y"))
     }
 
     func testAnyCharacterCapturesKeyIntention() throws {
@@ -64,7 +64,7 @@ final class KeyInputTests: XCTestCase {
 
         let table = InputStyleManager.shared.table(for: .custom(url))
 
-        XCTAssertEqual(table.toHiragana(currentText: ["n"], added: .key(intention: "a", modifiers: [.shift])), Array("んa"))
+        XCTAssertEqual(table.applied(currentText: ["n"], added: .key(intention: "a", modifiers: [.shift])), Array("んa"))
     }
 
     func testKeyAtTailMatches() throws {
@@ -75,10 +75,10 @@ final class KeyInputTests: XCTestCase {
         let table = InputStyleManager.shared.table(for: .custom(url))
 
         // buffer に 'k' があり、追加入力が .key(intention: "0", [.shift]) の場合に一致
-        XCTAssertEqual(table.toHiragana(currentText: ["k"], added: .key(intention: "0", modifiers: [.shift])), Array("か"))
+        XCTAssertEqual(table.applied(currentText: ["k"], added: .key(intention: "0", modifiers: [.shift])), Array("か"))
 
         // 単なる文字 '0' では一致せず、素通り
-        XCTAssertEqual(table.toHiragana(currentText: ["k"], added: .character("0")), Array("k0"))
+        XCTAssertEqual(table.applied(currentText: ["k"], added: .character("0")), Array("k0"))
     }
 
     func testKeyAtTailPriorityOverCharacter() throws {
@@ -93,9 +93,9 @@ final class KeyInputTests: XCTestCase {
         let table = InputStyleManager.shared.table(for: .custom(url))
 
         // .key は k{shift 0} に一致
-        XCTAssertEqual(table.toHiragana(currentText: ["k"], added: .key(intention: "0", modifiers: [.shift])), Array("か"))
+        XCTAssertEqual(table.applied(currentText: ["k"], added: .key(intention: "0", modifiers: [.shift])), Array("か"))
         // 文字 '0' は k0 に一致
-        XCTAssertEqual(table.toHiragana(currentText: ["k"], added: .character("0")), Array("こ"))
+        XCTAssertEqual(table.applied(currentText: ["k"], added: .character("0")), Array("こ"))
     }
 
     func testComposingTextWithKey() throws {

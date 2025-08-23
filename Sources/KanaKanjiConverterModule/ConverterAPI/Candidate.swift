@@ -162,7 +162,10 @@ public struct Candidate: Sendable {
     /// ルビ文字数
     public let rubyCount: Int
 
-    public init(text: String, value: PValue, composingCount: ComposingCount, lastMid: Int, data: [DicdataElement], actions: [CompleteAction] = [], inputable: Bool = true) {
+    /// 学習対象かどうか（ユーザショートカット等は除外する）
+    public var isLearningTarget: Bool
+
+    public init(text: String, value: PValue, composingCount: ComposingCount, lastMid: Int, data: [DicdataElement], actions: [CompleteAction] = [], inputable: Bool = true, isLearningTarget: Bool = true) {
         self.text = text
         self.value = value
         self.composingCount = composingCount
@@ -171,6 +174,7 @@ public struct Candidate: Sendable {
         self.actions = actions
         self.inputable = inputable
         self.rubyCount = self.data.reduce(into: 0) { $0 += $1.ruby.count }
+        self.isLearningTarget = isLearningTarget
     }
     /// 後から`action`を追加した形を生成する関数
     /// - parameters:
@@ -209,7 +213,12 @@ public struct Candidate: Sendable {
     @inlinable public mutating func parseTemplate() {
         // ここでCandidate.textとdata.map(\.word).join("")の整合性が壊れることに注意
         // ただし、dataの方を加工するのは望ましい挙動ではない。
-        self.text = Self.parseTemplate(text)
+        let newText = Self.parseTemplate(text)
+        if self.text != newText {
+            self.text = consume newText
+            // テンプレートを適用する場合、学習の対象にはしない。
+            self.isLearningTarget = false
+        }
     }
 
     /// 入力を文としたとき、prefixになる文節に対応するCandidateを作る

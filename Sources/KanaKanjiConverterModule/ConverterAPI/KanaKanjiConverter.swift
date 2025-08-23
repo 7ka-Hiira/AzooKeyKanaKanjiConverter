@@ -502,11 +502,34 @@ public final class KanaKanjiConverter {
         } else {
             wholeSentenceUniqueCandidates = self.getUniqueCandidate(clauseResult.lazy.map { self.converter.processClauseCandidate($0) })
         }
+        // ユーザショートカット（全文一致のみ）候補を抽出
+        let userShortcutsCandidates: [Candidate] = {
+            let ruby = inputData.convertTarget.toKatakana()
+            guard !ruby.isEmpty else {
+                return []
+            }
+            let dicdata = self.converter.dicdataStore.getPerfectMatchedUserShortcutsDicdata(ruby: ruby, state: self.dicdataStoreState)
+            let composingCount: ComposingCount = .surfaceCount(inputData.convertTarget.count)
+            return dicdata.map { data in
+                Candidate(
+                    text: data.word,
+                    value: data.value(),
+                    composingCount: composingCount,
+                    lastMid: data.mid,
+                    data: [data],
+                    actions: [],
+                    inputable: true,
+                    isLearningTarget: false
+                )
+            }
+        }()
+
         if case .完全一致 = options.requestQuery {
+            let merged = self.getUniqueCandidate(wholeSentenceUniqueCandidates.chained(userShortcutsCandidates)).sorted(by: {$0.value > $1.value})
             if options.zenzaiMode.enabled {
-                return ConversionResult(mainResults: wholeSentenceUniqueCandidates, firstClauseResults: [])
+                return ConversionResult(mainResults: merged, firstClauseResults: [])
             } else {
-                return ConversionResult(mainResults: wholeSentenceUniqueCandidates.sorted(by: {$0.value > $1.value}), firstClauseResults: [])
+                return ConversionResult(mainResults: merged, firstClauseResults: [])
             }
         }
         // モデル重みを統合
@@ -546,12 +569,13 @@ public final class KanaKanjiConverter {
             }
             // その他のトップレベル変換（先頭に表示されうる変換候補）
             let topLevelAdditionalCandidates = self.getTopLevelAdditionalCandidate(inputData, options: options)
-            // best8、foreign_candidates、zeroHintPrediction_candidates、toplevel_additional_candidateを混ぜて上位5件を取得する
+            // best8、foreign_candidates、zeroHintPrediction_candidates、toplevel_additional_candidate、user_shortcuts を混ぜて上位5件を取得する
             fullCandidates = getUniqueCandidate(
                 bestFiveSentenceCandidates
                     .chained(consume bestThreePredictionCandidates)
                     .chained(consume foreignCandidates)
                     .chained(consume topLevelAdditionalCandidates)
+                    .chained(consume userShortcutsCandidates)
             ).min(count: 5, sortedBy: {$0.value > $1.value})
         }
         // 文節のみ変換するパターン（上位5件）

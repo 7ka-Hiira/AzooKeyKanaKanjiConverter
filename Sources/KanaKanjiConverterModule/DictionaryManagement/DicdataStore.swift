@@ -17,7 +17,7 @@ public final class DicdataStore {
     }
 
     private var ccParsed: [Bool] = .init(repeating: false, count: 1319)
-    private var ccLines1D: [Int: PValue] = [:]
+    private var ccLines: [Int: [PValue]] = [:]
     private var mmValue: [PValue] = []
 
     private var loudses: [String: LOUDS] = [:]
@@ -136,9 +136,6 @@ public final class DicdataStore {
     }
 
     func loadLOUDS(query: String, state: DicdataStoreState) -> LOUDS? {
-        if self.importedLoudses.contains(query) {
-            return self.loudses[query]
-        }
         if query == "user" {
             if state.userDictionaryHasLoaded {
                 return state.userDictionaryLOUDS
@@ -149,6 +146,18 @@ public final class DicdataStore {
             } else {
                 state.updateUserDictionaryLOUDS(nil)
                 debug("Error: ユーザ辞書のloudsファイルの読み込みに失敗しましたが、このエラーは深刻ではありません。")
+            }
+        }
+        if query == "user_shortcuts" {
+            if state.userShortcutsHasLoaded {
+                return state.userShortcutsLOUDS
+            } else if let userDictionaryURL = state.userDictionaryURL,
+                      let louds = LOUDS.loadUserShortcuts(userDictionaryURL: userDictionaryURL) {
+                state.updateUserShortcutsLOUDS(louds)
+                return louds
+            } else {
+                state.updateUserShortcutsLOUDS(nil)
+                debug("Error: ユーザショートカット辞書のloudsファイルの読み込みに失敗しましたが、このエラーは深刻ではありません。")
             }
         }
         if query == "memory" {
@@ -163,6 +172,11 @@ public final class DicdataStore {
                 debug("Error: ユーザ辞書のloudsファイルの読み込みに失敗しましたが、このエラーは深刻ではありません。")
             }
         }
+
+        if self.importedLoudses.contains(query) {
+            return self.loudses[query]
+        }
+
         // 一部のASCII文字はエスケープする
         let identifier = [
             "\\n": "[0A]",
@@ -205,6 +219,18 @@ public final class DicdataStore {
             return []
         }
         return [louds.searchNodeIndex(chars: charIDs)].compactMap {$0}
+    }
+
+    /// ユーザショートカット辞書から、rubyと完全一致するエントリを抽出して`DicdataElement`列を返す
+    /// - Parameters:
+    ///   - ruby: カタカナの読み（入力全文）
+    ///   - state: ストア状態
+    /// - Returns: 完全一致の`DicdataElement`配列
+    func getPerfectMatchedUserShortcutsDicdata(ruby: some StringProtocol, state: DicdataStoreState) -> [DicdataElement] {
+        let charIDs = ruby.map(self.character2charId(_:))
+        let indices = self.perfectMatchingSearch(query: "user_shortcuts", charIDs: charIDs, state: state)
+        guard !indices.isEmpty else { return [] }
+        return self.getDicdataFromLoudstxt3(identifier: "user_shortcuts", indices: indices, state: state)
     }
 
     private struct UnifiedGenerator {
@@ -430,6 +456,19 @@ public final class DicdataStore {
         if identifier == "user", let userDictionaryURL = state.userDictionaryURL {
             for (key, value) in dict {
                 data.append(contentsOf: LOUDS.getUserDictionaryDataForLoudstxt3(
+                    identifier + "\(key)",
+                    indices: value.map {$0 & 2047},
+                    cache: self.loudstxts[identifier + "\(key)"],
+                    userDictionaryURL: userDictionaryURL
+                ))
+            }
+            data.mutatingForEach {
+                $0.metadata = .isFromUserDictionary
+            }
+        }
+        if identifier == "user_shortcuts", let userDictionaryURL = state.userDictionaryURL {
+            for (key, value) in dict {
+                data.append(contentsOf: LOUDS.getUserShortcutsDataForLoudstxt3(
                     identifier + "\(key)",
                     indices: value.map {$0 & 2047},
                     cache: self.loudstxts[identifier + "\(key)"],
@@ -726,14 +765,15 @@ public final class DicdataStore {
                 result.append(DicdataElement(word: String(fs), ruby: convertTarget, cid: CIDData.記号.cid, mid: MIDData.一般.mid, value: value))
                 value -= 5.0
             }
-            if let group = Self.weakRelatingSymbolLookup[hs] {
-                for symbol in group where symbol != hs {
-                    result.append(DicdataElement(word: String(symbol), ruby: convertTarget, cid: CIDData.記号.cid, mid: MIDData.一般.mid, value: value))
+        }
+        if let group = Self.weakRelatingSymbolLookup[convertTarget] {
+            var value: PValue = -34
+            for symbol in group where symbol != convertTarget {
+                result.append(DicdataElement(word: String(symbol), ruby: convertTarget, cid: CIDData.記号.cid, mid: MIDData.一般.mid, value: value))
+                value -= 5.0
+                if symbol.count == 1, let fs = Self.halfwidthToFullwidth[symbol.first!], fs != symbol.first {
+                    result.append(DicdataElement(word: String(fs), ruby: convertTarget, cid: CIDData.記号.cid, mid: MIDData.一般.mid, value: value))
                     value -= 5.0
-                    if let fs = Self.halfwidthToFullwidth[symbol] {
-                        result.append(DicdataElement(word: String(fs), ruby: convertTarget, cid: CIDData.記号.cid, mid: MIDData.一般.mid, value: value))
-                        value -= 5.0
-                    }
                 }
             }
         }
@@ -755,7 +795,7 @@ public final class DicdataStore {
     // 宣言順不同
     // 1つを入れると他が出る、というイメージ
     // 半角と全角がある場合は半角のみ
-    private static let weakRelatingSymbolGroups: [[Character]] = [
+    private static let weakRelatingSymbolGroups: [[String]] = [
         // 異体字セレクト用 (試験実装)
         ["高", "髙"], // ハシゴダカ
         ["斎", "斉", "齋", "齊"],
@@ -786,12 +826,20 @@ public final class DicdataStore {
         ["°", "℃", "℉"],
         ["◯"], // 図形
         ["*", "※", "✳︎", "✴︎"],   // こめ
-        ["・", "…", "‥", ".", "•", "/", "︙", "︰", "÷", "➗"],
+        ["、", "。", "，", "．", "・", "…", "‥", "•", "/", "︙", "︰", "÷", "➗"],
         ["+", "±", "⊕", "➕️", "十"],
-        ["-", "ー", "➖️"],
-        ["×", "❌", "✖️", "x"],
+        ["×", "❌", "✖️"],
+        ["÷", "➗" ],
         ["<", "≦", "≪", "〈", "《", "‹", "«"],
         [">", "≧", "≫", "〉", "》", "›", "»"],
+        ["「", "『", "（", "［", "《", "【"],
+        ["」", "』", "）", "］", "》", "】"],
+        ["「」", "『』", "（）", "［］", "《》", "【】"],
+        ["(", "{", "<", "["],
+        [")", "}", ">", "]"],
+        ["()", "{}", "<>", "[]"],
+        ["’", "“", "”", "„", "\"", "`", "'"],
+        ["\"\"\"", "'''", "```"],
         ["=", "≒", "≠", "≡", "🟰"],
         [":", ";"],
         ["!", "❗️", "❣️", "‼︎", "⁉︎", "❕", "‼️", "⁉️", "¡"],
@@ -810,12 +858,16 @@ public final class DicdataStore {
     ]
 
     // 高速ルックアップ用（記号→同一グループ）
-    private static let weakRelatingSymbolLookup: [Character: [Character]] = {
-        var map: [Character: [Character]] = [:]
+    private static let weakRelatingSymbolLookup: [String: [String]] = {
+        var map: [String: [String]] = [:]
         for group in weakRelatingSymbolGroups {
-            for c in group { map[c] = group }
+            for c in group {
+                map[c, default: []].append(contentsOf: group)
+            }
         }
-        return map
+        return map.mapValues {
+            Array($0.uniqued())
+        }
     }()
 
     private func loadCCBinary(url: URL) -> [(Int32, Float)] {
@@ -838,6 +890,24 @@ public final class DicdataStore {
         state.dynamicUserDictionary.filter {$0.ruby.hasPrefix(ruby)}
     }
 
+    private func loadCCLine(_ former: Int) {
+        let url = self.dictionaryURL.appending(path: "cb/\(former).binary", directoryHint: .notDirectory)
+        let values = self.loadCCBinary(url: url)
+        defer {
+            self.ccParsed[former] = true
+        }
+        guard !values.isEmpty else {
+            return
+        }
+        let (firstKey, firstValue) = values[0]
+        assert(firstKey == -1)
+        var line = [PValue](repeating: PValue(firstValue), count: self.cidCount)
+        for (k, v) in values.dropFirst() {
+            line[Int(k)] = PValue(v)
+        }
+        self.ccLines[former] = consume line
+    }
+
     /// class idから連接確率を得る関数
     /// - Parameters:
     ///   - former: 左側の語のid
@@ -848,45 +918,26 @@ public final class DicdataStore {
     /// 特定の`former`に対して繰り返し`getCCValue`を実行する場合、`getCCLatter`を用いた方がアクセス効率が良い
     public func getCCValue(_ former: Int, _ latter: Int) -> PValue {
         if !self.ccParsed[former] {
-            let url = self.dictionaryURL.appending(path: "cb/\(former).binary", directoryHint: .notDirectory)
-            let values = self.loadCCBinary(url: url)
-            for (k, v) in values {
-                if k == -1 {
-                    self.ccLines1D[-former - 1] = PValue(v)
-                } else {
-                    self.ccLines1D[former * self.cidCount + Int(k)] = PValue(v)
-                }
-            }
-            self.ccParsed[former] = true
+            self.loadCCLine(former)
         }
-        return self.ccLines1D[former * self.cidCount + latter, default: self.ccLines1D[-former - 1, default: -25]]
+        return self.ccLines[former]?[latter] ?? -25
     }
 
-    struct CCLatter {
-        let cidCount: Int
+    struct CCLatter: ~Copyable {
         let former: Int
-        let ccLines1D: [Int: PValue]
+        let ccLine: [PValue]?
 
-        func get(_ latter: Int) -> PValue {
-            self.ccLines1D[self.cidCount * former + latter, default: self.ccLines1D[-former - 1, default: -25]]
+        borrowing func get(_ latter: Int) -> PValue {
+            self.ccLine?[latter] ?? -25
         }
     }
 
     /// 特定の`former`に対して繰り返し`getCCValue`を実行する場合、`getCCLatter`を用いた方がアクセス効率が良い
     func getCCLatter(_ former: Int) -> CCLatter {
         if !self.ccParsed[former] {
-            let url = self.dictionaryURL.appending(path: "cb/\(former).binary", directoryHint: .notDirectory)
-            let values = self.loadCCBinary(url: url)
-            for (k, v) in values {
-                if k == -1 {
-                    self.ccLines1D[-former - 1] = PValue(v)
-                } else {
-                    self.ccLines1D[former * self.cidCount + Int(k)] = PValue(v)
-                }
-            }
-            self.ccParsed[former] = true
+            self.loadCCLine(former)
         }
-        return CCLatter(cidCount: self.cidCount, former: former, ccLines1D: self.ccLines1D)
+        return CCLatter(former: former, ccLine: self.ccLines[former])
     }
 
     /// meaning idから意味連接尤度を得る関数

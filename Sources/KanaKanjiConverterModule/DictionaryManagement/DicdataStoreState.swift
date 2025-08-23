@@ -18,6 +18,10 @@ package final class DicdataStoreState {
     private(set) var userDictionaryHasLoaded: Bool = false
     private(set) var userDictionaryLOUDS: LOUDS?
 
+    // user_shortcuts 辞書
+    private(set) var userShortcutsHasLoaded: Bool = false
+    private(set) var userShortcutsLOUDS: LOUDS?
+
     private(set) var memoryHasLoaded: Bool = false
     private(set) var memoryLOUDS: LOUDS?
 
@@ -50,6 +54,11 @@ package final class DicdataStoreState {
     func updateUserDictionaryLOUDS(_ newLOUDS: LOUDS?) {
         self.userDictionaryLOUDS = newLOUDS
         self.userDictionaryHasLoaded = true
+    }
+
+    func updateUserShortcutsLOUDS(_ newLOUDS: LOUDS?) {
+        self.userShortcutsLOUDS = newLOUDS
+        self.userShortcutsHasLoaded = true
     }
 
     @available(*, deprecated, message: "This API is deprecated. Directly update the state instead.")
@@ -92,6 +101,10 @@ package final class DicdataStoreState {
     // 学習を反映する
     // TODO: previousの扱いを改善したい
     func updateLearningData(_ candidate: Candidate, with previous: DicdataElement?) {
+        // 学習対象外の候補は無視
+        if !candidate.isLearningTarget {
+            return
+        }
         if let previous {
             self.learningMemoryManager.update(data: [previous] + candidate.data)
         } else {
@@ -101,6 +114,10 @@ package final class DicdataStoreState {
     // 予測変換に基づいて学習を反映する
     // TODO: previousの扱いを改善したい
     func updateLearningData(_ candidate: Candidate, with predictionCandidate: PostCompositionPredictionCandidate) {
+        // 学習対象外の候補は無視
+        if !candidate.isLearningTarget {
+            return
+        }
         switch predictionCandidate.type {
         case .additional(data: let data):
             self.learningMemoryManager.update(data: candidate.data, updatePart: data)
