@@ -38,7 +38,9 @@ final class LOUDSTests: XCTestCase {
         XCTAssertNotNil(index)
         guard let index else { return }
 
-        let dicdata: [DicdataElement] = LOUDS.getDataForLoudstxt3("シ" + "\(index >> 11)", indices: [index & 2047], dictionaryURL: Self.resourceURL)
+        let shard = index / DictionaryBuilder.entriesPerShard
+        let local = index % DictionaryBuilder.entriesPerShard
+        let dicdata: [DicdataElement] = LOUDS.getDataForLoudstxt3("シ" + "\(shard)", indices: [local], dictionaryURL: Self.resourceURL)
         XCTAssertTrue(dicdata.contains {$0.word == "司会"})
         XCTAssertTrue(dicdata.contains {$0.word == "視界"})
         XCTAssertTrue(dicdata.contains {$0.word == "死界"})

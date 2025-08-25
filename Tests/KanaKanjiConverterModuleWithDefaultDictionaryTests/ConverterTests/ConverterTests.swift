@@ -315,6 +315,29 @@ final class ConverterTests: XCTestCase {
         }
     }
 
+    func testInputTableEdgeCases() throws {
+        do {
+            let converter = KanaKanjiConverter.withDefaultDictionary()
+            InputStyleManager.registerInputStyle(table: InputTable(baseMapping: [
+                [.piece(.character("k")), .piece(.character("i"))]: [],
+                [.piece(.character("a"))]: [.character("あ")]
+            ]), for: "test")
+            var c = ComposingText()
+            sequentialInput(&c, sequence: "ki", inputStyle: .mapped(id: .tableName("test")))
+            XCTAssertEqual(c.convertTarget, "")
+            XCTAssertEqual(c.input.count, 2)
+            do {
+                let results = converter.requestCandidates(c, options: requestOptions())
+                XCTAssertTrue(results.mainResults.isEmpty)
+            }
+            sequentialInput(&c, sequence: "a", inputStyle: .mapped(id: .tableName("test")))
+            do {
+                let results = converter.requestCandidates(c, options: requestOptions())
+                XCTAssertTrue(results.mainResults.contains(where: {$0.text == "あ"}))
+            }
+        }
+    }
+
     // 必ず正解すべきテストケース
     func testMustCases() async throws {
         // ダイレクト入力

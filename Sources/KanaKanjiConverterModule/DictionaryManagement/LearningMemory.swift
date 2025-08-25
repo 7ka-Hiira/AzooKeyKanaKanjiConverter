@@ -80,22 +80,7 @@ struct LongTermLearningMemory {
         fileExist(pauseFileURL(directoryURL: directoryURL))
     }
 
-    static var txtFileSplit: Int { 2048 }
-
-    private static func BoolToUInt64(_ bools: [Bool]) -> [UInt64] {
-        let unit = 64
-        let value = bools.count.quotientAndRemainder(dividingBy: unit)
-        let _bools = bools + [Bool].init(repeating: true, count: (unit - value.remainder) % unit)
-        var result = [UInt64]()
-        for i in 0...value.quotient {
-            var value: UInt64 = 0
-            for j in 0..<unit {
-                value += (_bools[i * unit + j] ? 1 : 0) << (unit - j - 1)
-            }
-            result.append(value)
-        }
-        return result
-    }
+    static var txtFileSplit: Int { DictionaryBuilder.entriesPerShard }
 
     /// - note:
     ///   この関数は出現数(`metadata.count`)と単語の長さ(`dicdata.ruby.count`)に基づいてvalueを決める。
@@ -310,19 +295,12 @@ struct LongTermLearningMemory {
     }
 
     fileprivate static func make_loudstxt3(lines: [DataBlock]) -> Data {
-        let lc = lines.count    // データ数
-        let count = Data(bytes: [UInt16(lc)], count: 2) // データ数をUInt16でマップ
-
-        let data = lines.map { $0.makeLoudstxt3Entry() }
-        let body = data.reduce(Data(), +)   // データ
-
-        let header_endIndex: UInt32 = 2 + UInt32(lc) * UInt32(MemoryLayout<UInt32>.size)
-        let headerArray = data.dropLast().reduce(into: [header_endIndex]) {array, value in // ヘッダの作成
-            array.append(array.last! + UInt32(value.count))
-        }
-
-        let header = Data(bytes: headerArray, count: MemoryLayout<UInt32>.size * headerArray.count)
-        return count + header + body
+        Loudstxt3Builder.makeBinary(entries: lines.map { line in
+            (
+                ruby: line.ruby,
+                rows: line.data.map { .init(word: $0.word, lcid: $0.lcid, rcid: $0.rcid, mid: $0.mid, score: $0.score) }
+            )
+        })
     }
 
     enum UpdateError: Error {
@@ -371,17 +349,15 @@ struct LongTermLearningMemory {
             currentNodes = currentNodes.flatMap {(_, nodeIndex) in trie.nodes[nodeIndex].children.sorted(by: {$0.key < $1.key})}
         }
 
-        let bytes = Self.BoolToUInt64(bits)
         let loudsFileTemp = loudsFileURL(asTemporaryFile: true, directoryURL: directoryURL)
-        do {
-            let binary = Data(bytes: bytes, count: bytes.count * 8)
-            try binary.write(to: loudsFileTemp)
-        }
-
         let loudsCharsFileTemp = loudsCharsFileURL(asTemporaryFile: true, directoryURL: directoryURL)
         do {
-            let binary = Data(bytes: nodes2Characters, count: nodes2Characters.count)
-            try binary.write(to: loudsCharsFileTemp)
+            try DictionaryBuilder.writeLOUDS(
+                bits: bits,
+                nodes2Characters: nodes2Characters,
+                loudsURL: loudsFileTemp,
+                loudsChars2URL: loudsCharsFileTemp
+            )
         }
         let metadataFileTemp = metadataFileURL(asTemporaryFile: true, directoryURL: directoryURL)
         do {
@@ -394,21 +370,18 @@ struct LongTermLearningMemory {
 
         let loudsTxt3FileCount: Int
         do {
-            loudsTxt3FileCount = ((dicdata.count) / txtFileSplit) + 1
-            let indiceses: [Range<Int>] = (0..<loudsTxt3FileCount).map {
-                let start = $0 * txtFileSplit
-                let _end = ($0 + 1) * txtFileSplit
-                let end = dicdata.count < _end ? dicdata.count : _end
-                return start..<end
+            // Build sequential entries for loudstxt3
+            let entries: [(ruby: String, rows: [Loudstxt3Builder.Row])] = dicdata.map { line in
+                (
+                    ruby: line.ruby,
+                    rows: line.data.map { .init(word: $0.word, lcid: $0.lcid, rcid: $0.rcid, mid: $0.mid, score: $0.score) }
+                )
             }
-
-            for indices in indiceses {
-                do {
-                    let start = indices.startIndex / txtFileSplit
-                    let binary = make_loudstxt3(lines: Array(dicdata[indices]))
-                    try binary.write(to: loudsTxt3FileURL("\(start)", asTemporaryFile: true, directoryURL: directoryURL), options: .atomic)
-                }
-            }
+            loudsTxt3FileCount = try Loudstxt3Builder.writeSequentialShards(
+                entries: entries,
+                split: txtFileSplit,
+                urlProvider: { loudsTxt3FileURL("\($0)", asTemporaryFile: true, directoryURL: directoryURL) }
+            )
         }
 
         // MARK: `.pause`ファイルを書き出す

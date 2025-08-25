@@ -74,7 +74,7 @@ public struct ComposingText: Sendable {
 
     /// 独立セグメントの境界にあたるインデックスのリストを作成し、返す
     /// 独立セグメントとは、編集しても他の部分に影響を与えない部分
-    private func getIndependentSegmentBoundaries(independentEmptySurfaceInput: Bool) -> [IndexPair] {
+    private func getIndependentSegmentBoundaries() -> [IndexPair] {
         // 動作例1
         // input: `k, a, n, s, h, a` (全てroman2kana)
         // convertTarget: `か ん し| ゃ`
@@ -116,12 +116,8 @@ public struct ComposingText: Sendable {
 
             // 今回の文字入力による変換が、前の暫定独立セグメントの文字を含むローマ字テーブルエントリによって行われた場合
             // 入力は前のセグメントに依存しているので、前のセグメントとの境界を消し、より長い独立セグメントにする
+            // 文字列に影響を与えなかった入力はsurfaceの長さ0のセグメントとして扱われる
             while let lastIndependentSegment = independentSegmentBoundaries.popLast() {
-                // `independentEmptyInput` が偽の場合、文字列に影響を与えなかった入力は前のセグメントに統合する
-                if !independentEmptySurfaceInput && deletedCount == 0 && convertedLength == previousConvertedLength
-                    && lastIndependentSegment.surfaceIndex == previousConvertedLength {
-                    continue
-                }
                 // deletedCount分遡るまでにある境界を消す
                 if lastIndependentSegment.surfaceIndex <= previousConvertedLength - deletedCount {
                     // deletedCount以上前の文字には依存していないので一度消した境界を戻す
@@ -162,7 +158,7 @@ public struct ComposingText: Sendable {
         //    input = [k, a, ん, し, ゃ]
         //    inputにおける`し`の後にあたるインデックス4が返される
 
-        var independentSegmentBoundaries = getIndependentSegmentBoundaries(independentEmptySurfaceInput: false)
+        var independentSegmentBoundaries = getIndependentSegmentBoundaries()
         // カーソルが含まれるセグメントの始点と終点
         var cursorSegmentEnd = IndexPair(inputIndex: self.input.count, surfaceIndex: self.convertTarget.count)
         var cursorSegmentStart = IndexPair(inputIndex: 0, surfaceIndex: 0)
@@ -177,8 +173,10 @@ public struct ComposingText: Sendable {
                 cursorSegmentStart = independentStart
                 break
             }
-            // 現在のセグメントの開始は次に処理するセグメントの終端になる
-            cursorSegmentEnd = independentStart
+            // セグメントのsurfaceが空でない場合、現在のセグメントの開始は次に処理するセグメントの終端になる
+            if independentStart.surfaceIndex < cursorSegmentEnd.surfaceIndex {
+                cursorSegmentEnd = independentStart
+            }
         }
 
         // targetSurfaceIndexが含まれる独立セグメント全体をひらがなで置換する
@@ -288,10 +286,20 @@ public struct ComposingText: Sendable {
 
         // この2つの値はこの順で計算する。
         // これから行く位置
-        let targetCursorPosition = self.forceGetInputCursorPosition(targetSurfaceIndex: self.convertTargetCursorPosition - count)
+        var targetCursorPosition = self.forceGetInputCursorPosition(targetSurfaceIndex: self.convertTargetCursorPosition - count)
         // 現在の位置
-        let inputCursorPosition = self.forceGetInputCursorPosition(targetSurfaceIndex: self.convertTargetCursorPosition)
+        var inputCursorPosition = self.forceGetInputCursorPosition(targetSurfaceIndex: self.convertTargetCursorPosition)
 
+        // compositionSeparatorが左にあるときは削除してtargetCursorPositionとinputCursorPositionを更新
+        let targetCursorPositionLeft = targetCursorPosition - 1
+        if targetCursorPositionLeft >= 0 && targetCursorPositionLeft < input.count {
+            let leftElement = input[targetCursorPositionLeft]
+            if leftElement.piece == .compositionSeparator && leftElement.inputStyle == .frozen {
+                input.remove(at: targetCursorPositionLeft)
+                targetCursorPosition = targetCursorPositionLeft
+                inputCursorPosition -= 1
+            }
+        }
         // inputを更新する
         if targetCursorPosition == 0 || inputCursorPosition == input.count {
             self.input.removeSubrange(targetCursorPosition ..< inputCursorPosition)
@@ -375,7 +383,7 @@ public struct ComposingText: Sendable {
         // [き, ょ, う, は, い, い, て, ん, き, だ]
         // i2c: [0: 0, 3: 2(きょ), 4: 3(う), 6: 4(は), 7: 5(い), 8: 6(い), 10: 7(て), 13: 9(んき), 15: 10(だ)]
 
-        let segmentBoundaries = getIndependentSegmentBoundaries(independentEmptySurfaceInput: true)
+        let segmentBoundaries = getIndependentSegmentBoundaries()
         return Dictionary(segmentBoundaries.map { ($0.inputIndex, $0.surfaceIndex) }) { _, second in second }
     }
 
