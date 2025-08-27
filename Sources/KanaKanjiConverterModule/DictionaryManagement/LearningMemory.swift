@@ -298,7 +298,7 @@ struct LongTermLearningMemory {
         Loudstxt3Builder.makeBinary(entries: lines.map { line in
             (
                 ruby: line.ruby,
-                rows: line.data.map { .init(word: $0.word, lcid: $0.lcid, rcid: $0.rcid, mid: $0.mid, score: $0.score) }
+                rows: line.data.map { .init(word: $0.word, lcid: $0.lcid, rcid: $0.rcid, mid: $0.mid, score: Float32($0.score)) }
             )
         })
     }
@@ -374,7 +374,7 @@ struct LongTermLearningMemory {
             let entries: [(ruby: String, rows: [Loudstxt3Builder.Row])] = dicdata.map { line in
                 (
                     ruby: line.ruby,
-                    rows: line.data.map { .init(word: $0.word, lcid: $0.lcid, rcid: $0.rcid, mid: $0.mid, score: $0.score) }
+                    rows: line.data.map { .init(word: $0.word, lcid: $0.lcid, rcid: $0.rcid, mid: $0.mid, score: Float32($0.score)) }
                 )
             }
             loudsTxt3FileCount = try Loudstxt3Builder.writeSequentialShards(
