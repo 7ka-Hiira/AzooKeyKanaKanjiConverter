@@ -45,7 +45,7 @@ final class InputStyleManagerTests: XCTestCase {
     func testTableRegisteration() throws {
         InputStyleManager.registerInputStyle(table: InputTable(baseMapping: [
             [.piece(.character("k")), .piece(.character("a"))]: [.character("か")]
-        ]), for: "か")
+        ] as Dictionary), for: "か")
         var c = ComposingText()
         c.insertAtCursorPosition([.init(character: "k", inputStyle: .mapped(id: .tableName("か")))])
         c.insertAtCursorPosition([.init(character: "a", inputStyle: .mapped(id: .tableName("か")))])

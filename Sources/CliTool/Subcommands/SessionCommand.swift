@@ -22,6 +22,8 @@ extension Subcommands {
         var disablePrediction = false
         @Flag(name: [.customLong("enable_memory")], help: "Enable memory.")
         var enableLearning = false
+        @Option(name: [.customLong("readwrite_memory")], help: "Enable read/write memory.")
+        var writableMemoryPath: String?
         @Option(name: [.customLong("readonly_memory")], help: "Enable readonly memory.")
         var readOnlyMemoryPath: String?
         @Flag(name: [.customLong("only_whole_conversion")], help: "Show only whole conversion (完全一致変換).")
@@ -96,7 +98,9 @@ extension Subcommands {
                 DicdataElement(word: $0.word, ruby: $0.reading.toKatakana(), cid: CIDData.固有名詞.cid, mid: MIDData.一般.mid, value: -10)
             }
 
-            let learningType: LearningType = if self.readOnlyMemoryPath != nil {
+            let learningType: LearningType = if self.writableMemoryPath != nil {
+                .inputAndOutput
+            } else if self.readOnlyMemoryPath != nil {
                 // 読み取りのみ
                 .onlyOutput
             } else if self.enableLearning {
@@ -106,7 +110,9 @@ extension Subcommands {
                 // 読み書きなし
                 .nothing
             }
-            let memoryDirectory = if let readOnlyMemoryPath {
+            let memoryDirectory = if let writableMemoryPath {
+                URL(fileURLWithPath: writableMemoryPath)
+            } else if let readOnlyMemoryPath {
                 URL(fileURLWithPath: readOnlyMemoryPath)
             } else if self.enableLearning {
                 if let dir = self.getTemporaryDirectory() {

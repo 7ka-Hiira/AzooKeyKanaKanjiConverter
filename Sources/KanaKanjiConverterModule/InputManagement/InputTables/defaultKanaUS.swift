@@ -1,5 +1,7 @@
+import OrderedCollections
+
 extension InputTables {
-    static let defaultKanaUSPieceMap: [[InputTable.KeyElement]: [InputTable.ValueElement]] = InputTables.Helper.constructPieceMap([
+    static let defaultKanaUSPieceMap = InputTables.Helper.constructPieceMap([
         // 数字キー
         "1": "ぬ",
         "2": "ふ",

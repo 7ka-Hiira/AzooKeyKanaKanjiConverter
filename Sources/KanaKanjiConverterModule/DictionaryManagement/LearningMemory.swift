@@ -225,6 +225,9 @@ struct LongTermLearningMemory {
             let count = Int(loudstxtData[0 ..< 2].toArray(of: UInt16.self)[0])
             let indices = loudstxtData[2 ..< 2 + 4 * count].toArray(of: UInt32.self)
             for i in 0 ..< count {
+                guard metadataOffset < ltMetadata.endIndex else {
+                    break
+                }
                 // メタデータの読み取り
                 // 1byteで項目数
                 let itemCount = Int(ltMetadata[metadataOffset ..< metadataOffset + 1].toArray(of: UInt8.self)[0])

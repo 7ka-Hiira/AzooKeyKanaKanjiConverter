@@ -1,5 +1,7 @@
+import OrderedCollections
+
 extension InputTables {
-    static let defaultKanaJISPieceMap: [[InputTable.KeyElement]: [InputTable.ValueElement]] = InputTables.Helper.constructPieceMap([
+    static let defaultKanaJISPieceMap = InputTables.Helper.constructPieceMap([
         // 数字キー
         "1": "ぬ",
         "2": "ふ",
@@ -118,6 +120,6 @@ extension InputTables {
         "ほ「": "ぽ"
     ], additionalMapping: [
         [.piece(.compositionSeparator)]: [],
-        [.piece(.key(intention: "0", modifiers: [.shift]))]: [.character("を")]
+        [.piece(.key(intention: "0", input: "0", modifiers: [.shift]))]: [.character("を")]
     ])
 }

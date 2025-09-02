@@ -113,7 +113,7 @@ extension Subcommands {
                 requireJapanesePrediction: false,
                 requireEnglishPrediction: false,
                 keyboardLanguage: .ja_JP,
-                englishCandidateInRoman2KanaInput: true,
+                englishCandidateInRoman2KanaInput: false,
                 fullWidthRomanCandidate: false,
                 halfWidthKanaCandidate: false,
                 learningType: .nothing,
@@ -123,7 +123,7 @@ extension Subcommands {
                 sharedContainerURL: URL(fileURLWithPath: ""),
                 textReplacer: .withDefaultEmojiDictionary(),
                 specialCandidateProviders: KanaKanjiConverter.defaultSpecialCandidateProviders,
-                zenzaiMode: self.zenzWeightPath.isEmpty ? .off : .on(weight: URL(string: self.zenzWeightPath)!, inferenceLimit: self.configZenzaiInferenceLimit, personalizationMode: personalizationMode, versionDependentMode: .v2(.init(leftSideContext: self.configZenzaiIgnoreLeftContext ? nil : leftSideContext))),
+                zenzaiMode: self.zenzWeightPath.isEmpty ? .off : .on(weight: URL(string: self.zenzWeightPath)!, inferenceLimit: self.configZenzaiInferenceLimit, personalizationMode: personalizationMode, versionDependentMode: .v3(.init(leftSideContext: self.configZenzaiIgnoreLeftContext ? nil : leftSideContext))),
                 metadata: .init(versionString: "anco for debugging")
             )
             option.requestQuery = .完全一致

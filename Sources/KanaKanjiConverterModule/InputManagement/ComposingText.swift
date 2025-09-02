@@ -466,8 +466,7 @@ extension ComposingText {
             return switch initialPiece {
             case .character(let character): [character]
             case .compositionSeparator: []
-            case .key(intention: let c?, modifiers: _): [c]
-            case .key(intention: nil, modifiers: _): []
+            case .key(intention: let cint, input: let cinp, modifiers: _): [cint ?? cinp]
             }
         }
     }
@@ -476,14 +475,21 @@ extension ComposingText {
     @discardableResult
     static func updateConvertTarget(_ convertTarget: inout [Character], cachedTable: borrowing InputTable?, piece: InputPiece) -> Int {
         switch piece {
-        case .character(let ch), .key(intention: let ch?, modifiers: _):
+        case .character(let ch):
             if cachedTable != nil {
                 return cachedTable?.apply(to: &convertTarget, added: piece) ?? 0
             } else {
                 convertTarget.append(ch)
                 return 0
             }
-        case .compositionSeparator, .key(intention: nil, modifiers: _):
+        case .key(intention: let cint, input: let cinp, modifiers: _):
+            if cachedTable != nil {
+                return cachedTable?.apply(to: &convertTarget, added: piece) ?? 0
+            } else {
+                convertTarget.append(cint ?? cinp)
+                return 0
+            }
+        case .compositionSeparator:
             return cachedTable?.apply(to: &convertTarget, added: piece) ?? 0
         }
     }

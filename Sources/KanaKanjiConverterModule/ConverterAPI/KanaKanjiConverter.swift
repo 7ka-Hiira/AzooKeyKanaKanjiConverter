@@ -525,11 +525,11 @@ public final class KanaKanjiConverter {
         }()
 
         if case .完全一致 = options.requestQuery {
-            let merged = self.getUniqueCandidate(wholeSentenceUniqueCandidates.chained(userShortcutsCandidates)).sorted(by: {$0.value > $1.value})
+            let merged = self.getUniqueCandidate(wholeSentenceUniqueCandidates.chained(userShortcutsCandidates))
             if options.zenzaiMode.enabled {
-                return ConversionResult(mainResults: merged, firstClauseResults: [])
+                return ConversionResult(mainResults: consume merged, firstClauseResults: [])
             } else {
-                return ConversionResult(mainResults: merged, firstClauseResults: [])
+                return ConversionResult(mainResults: (consume merged).sorted(by: {$0.value > $1.value}), firstClauseResults: [])
             }
         }
         // モデル重みを統合

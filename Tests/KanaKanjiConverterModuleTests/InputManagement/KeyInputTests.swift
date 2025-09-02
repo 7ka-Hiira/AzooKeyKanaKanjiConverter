@@ -13,7 +13,7 @@ final class KeyInputTests: XCTestCase {
 
         let table = InputStyleManager.shared.table(for: .custom(url))
 
-        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "0", modifiers: [.shift])), Array("あ"))
+        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "0", input: "0", modifiers: [.shift])), Array("あ"))
         XCTAssertEqual(table.applied(currentText: [], added: .character("0")), Array("い"))
     }
 
@@ -24,7 +24,7 @@ final class KeyInputTests: XCTestCase {
 
         let table = InputStyleManager.shared.table(for: .custom(url))
 
-        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "0", modifiers: [.shift])), Array("A"))
+        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "0", input: "0", modifiers: [.shift])), Array("A"))
         XCTAssertEqual(table.applied(currentText: [], added: .character("0")), Array("0"))
     }
 
@@ -35,7 +35,7 @@ final class KeyInputTests: XCTestCase {
 
         let table = InputStyleManager.shared.table(for: .custom(url))
 
-        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "0", modifiers: [.shift])), Array("Z"))
+        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "0", input: "0", modifiers: [.shift])), Array("Z"))
         XCTAssertEqual(table.applied(currentText: [], added: .character("0")), Array("Z"))
     }
 
@@ -50,7 +50,7 @@ final class KeyInputTests: XCTestCase {
 
         let table = InputStyleManager.shared.table(for: .custom(url))
 
-        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "_", modifiers: [.shift])), Array("X"))
+        XCTAssertEqual(table.applied(currentText: [], added: .key(intention: "_", input: "_", modifiers: [.shift])), Array("X"))
         XCTAssertEqual(table.applied(currentText: [], added: .character("_")), Array("Y"))
     }
 
@@ -64,7 +64,7 @@ final class KeyInputTests: XCTestCase {
 
         let table = InputStyleManager.shared.table(for: .custom(url))
 
-        XCTAssertEqual(table.applied(currentText: ["n"], added: .key(intention: "a", modifiers: [.shift])), Array("んa"))
+        XCTAssertEqual(table.applied(currentText: ["n"], added: .key(intention: "a", input: "a", modifiers: [.shift])), Array("んa"))
     }
 
     func testKeyAtTailMatches() throws {
@@ -75,7 +75,7 @@ final class KeyInputTests: XCTestCase {
         let table = InputStyleManager.shared.table(for: .custom(url))
 
         // buffer に 'k' があり、追加入力が .key(intention: "0", [.shift]) の場合に一致
-        XCTAssertEqual(table.applied(currentText: ["k"], added: .key(intention: "0", modifiers: [.shift])), Array("か"))
+        XCTAssertEqual(table.applied(currentText: ["k"], added: .key(intention: "0", input: "0", modifiers: [.shift])), Array("か"))
 
         // 単なる文字 '0' では一致せず、素通り
         XCTAssertEqual(table.applied(currentText: ["k"], added: .character("0")), Array("k0"))
@@ -93,7 +93,7 @@ final class KeyInputTests: XCTestCase {
         let table = InputStyleManager.shared.table(for: .custom(url))
 
         // .key は k{shift 0} に一致
-        XCTAssertEqual(table.applied(currentText: ["k"], added: .key(intention: "0", modifiers: [.shift])), Array("か"))
+        XCTAssertEqual(table.applied(currentText: ["k"], added: .key(intention: "0", input: "0", modifiers: [.shift])), Array("か"))
         // 文字 '0' は k0 に一致
         XCTAssertEqual(table.applied(currentText: ["k"], added: .character("0")), Array("こ"))
     }
@@ -110,7 +110,7 @@ final class KeyInputTests: XCTestCase {
         var c = ComposingText()
         // カスタムテーブルに対して .key を1要素入力
         c.insertAtCursorPosition([
-            .init(piece: .key(intention: "0", modifiers: [.shift]), inputStyle: .mapped(id: .custom(url)))
+            .init(piece: .key(intention: "0", input: "0", modifiers: [.shift]), inputStyle: .mapped(id: .custom(url)))
         ])
         XCTAssertEqual(c.convertTarget, "が")
 

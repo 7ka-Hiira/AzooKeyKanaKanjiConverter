@@ -415,7 +415,7 @@ final class ComposingTextTests: XCTestCase {
             InputStyleManager.registerInputStyle(table: InputTable(baseMapping: [
                 [.piece(.character("k")), .piece(.character("i"))]: [],
                 [.piece(.character("a"))]: [.character("あ")]
-            ]), for: "test-empty-ki")
+            ] as Dictionary), for: "test-empty-ki")
             var c = ComposingText()
             sequentialInput(&c, sequence: "ki", inputStyle: .mapped(id: .tableName("test-empty-ki")))
             XCTAssertEqual(c.convertTarget, "")
