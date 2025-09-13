@@ -25,8 +25,8 @@ package final class DicdataStoreState {
     private(set) var memoryHasLoaded: Bool = false
     private(set) var memoryLOUDS: LOUDS?
 
-    func updateUserDictionaryURL(_ newURL: URL) {
-        if self.userDictionaryURL != newURL {
+    func updateUserDictionaryURL(_ newURL: URL, forceReload: Bool) {
+        if self.userDictionaryURL != newURL || forceReload {
             self.userDictionaryURL = newURL
             self.userDictionaryLOUDS = nil
             self.userDictionaryHasLoaded = false
@@ -66,7 +66,7 @@ package final class DicdataStoreState {
         if options.keyboardLanguage != self.keyboardLanguage {
             self.keyboardLanguage = options.keyboardLanguage
         }
-        self.updateUserDictionaryURL(options.sharedContainerURL)
+        self.updateUserDictionaryURL(options.sharedContainerURL, forceReload: false)
         let learningConfig = LearningConfig(learningType: options.learningType, maxMemoryCount: options.maxMemoryCount, memoryURL: options.memoryDirectoryURL)
         self.updateLearningConfig(learningConfig)
     }

@@ -1,6 +1,6 @@
 @testable import KanaKanjiConverterModule
-import XCTest
 internal import OrderedCollections
+import XCTest
 
 final class InputTableExportTests: XCTestCase {
     func testExportTable_EncodesCharactersAndTokens() throws {
@@ -20,7 +20,7 @@ final class InputTableExportTests: XCTestCase {
             ],
             [.piece(.character("{")), .piece(.character("}"))]: [
                 .character("{"), .character("}")
-            ],
+            ]
         ])
 
         let tsv = try InputStyleManager.exportTable(table)
@@ -41,12 +41,12 @@ final class InputTableExportTests: XCTestCase {
         // key: "k" then Shift+0 → value: "X"
         // key: Shift+_ → value: "Y"
         let table = InputTable(baseMapping: [
-            [.piece(.character("k")), .piece(.key(intention: "0", input: "0", modifiers: Set([.shift])))] : [
+            [.piece(.character("k")), .piece(.key(intention: "0", input: "0", modifiers: Set([.shift])))]: [
                 .character("X")
             ],
-            [.piece(.key(intention: "_", input: "_", modifiers: Set([.shift])))] : [
+            [.piece(.key(intention: "_", input: "_", modifiers: Set([.shift])))]: [
                 .character("Y")
-            ],
+            ]
         ])
 
         let tsv = try InputStyleManager.exportTable(table)
@@ -62,7 +62,7 @@ final class InputTableExportTests: XCTestCase {
     func testExportTable_ThrowsOnUnsupportedKey() {
         // Unsupported key: Shift+A (only Shift+0 and Shift+_ are supported)
         let table = InputTable(baseMapping: [
-            [.piece(.key(intention: "A", input: "A", modifiers: Set([.shift])))] : [
+            [.piece(.key(intention: "A", input: "A", modifiers: Set([.shift])))]: [
                 .character("Z")
             ]
         ])
@@ -79,7 +79,7 @@ final class InputTableExportTests: XCTestCase {
     func testKeepingOriginalOrder() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("custom.tsv")
         try "a\tあ\nka\tか\n".write(to: url, atomically: true, encoding: .utf8)
-        let table = InputStyleManager.shared.table(for: .custom(url))
+        let table = try InputStyleManager.loadTable(from: url)
         let tsv = try InputStyleManager.exportTable(table)
         let expected = """
         a\tあ

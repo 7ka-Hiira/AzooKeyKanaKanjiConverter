@@ -11,7 +11,9 @@ v0.10.0以降のAzooKeyKanaKanjiConverterでは「カスタム入力テーブル
 
 ## 使い方
 
-カスタム入力テーブルを利用するには、`inputStyle`として`.custom(URL)`を設定します。URLにはカスタム入力テーブルを記述したファイルを配置します。
+カスタム入力テーブルを利用するには、`InputStyleManager.registerInputStyle`を呼び出して`InputTable`を名前付きで設定し、`ComposingText`の`inputStyle`として`.tableName(name: String)`を設定します。
+
+## カスタム入力テーブルファイル
 カスタム入力テーブルは`.tsv`ファイルとして記述できます。
 
 ```tsv

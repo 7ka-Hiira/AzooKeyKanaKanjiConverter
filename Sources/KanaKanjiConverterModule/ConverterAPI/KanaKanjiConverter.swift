@@ -124,8 +124,8 @@ public final class KanaKanjiConverter {
         self.dicdataStoreState.importDynamicUserDictionary(dicdata)
     }
 
-    public func updateUserDictionaryURL(_ newURL: URL) {
-        self.dicdataStoreState.updateUserDictionaryURL(newURL)
+    public func updateUserDictionaryURL(_ newURL: URL, forceReload: Bool = false) {
+        self.dicdataStoreState.updateUserDictionaryURL(newURL, forceReload: forceReload)
     }
 
     public func updateLearningConfig(_ newConfig: LearningConfig) {

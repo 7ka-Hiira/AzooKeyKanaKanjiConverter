@@ -27,16 +27,6 @@ public final class InputStyleManager {
                 return .empty
             }
             return table
-        case .custom(let url):
-            if let table = self.tables[id] {
-                return table
-            } else if let table = try? Self.loadTable(from: url) {
-                self.tables[id] = table
-                return table
-            } else {
-                print("Warning: Input table at the path \(url) was not found.")
-                return .empty
-            }
         }
     }
 
@@ -171,8 +161,8 @@ public final class InputStyleManager {
 
         var lines: [String] = []
         for (key, value) in table.baseMapping {
-            var encodedKeys = try key.map(encodeKeyElement).joined()
-            var encodedValues = value.map(encodeValueElement).joined()
+            let encodedKeys = try key.map(encodeKeyElement).joined()
+            let encodedValues = value.map(encodeValueElement).joined()
             lines.append("\(encodedKeys)\t\(encodedValues)")
         }
         return lines.joined(separator: "\n")

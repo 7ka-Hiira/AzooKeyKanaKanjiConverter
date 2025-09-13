@@ -1,5 +1,5 @@
-import SwiftUtils
 import OrderedCollections
+import SwiftUtils
 private indirect enum TrieNode {
     struct State: Sendable, Equatable, Hashable {
         var resolvedAny1: InputPiece?
@@ -73,12 +73,12 @@ private indirect enum TrieNode {
                     // it as an invalid match.
                     switch state.resolvedAny1 {
                     case .character(let c): c
-                case .key(let intention, let input, _): intention ?? input
-                case .compositionSeparator, nil: nil
+                    case .key(let intention, let input, _): intention ?? input
+                    case .compositionSeparator, nil: nil
+                    }
                 }
             }
         }
-    }
     }
 }
 
