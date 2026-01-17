@@ -27,6 +27,7 @@ package typealias llama_vocab = OpaquePointer
 package func llama_model_free(_: llama_model) {}
 
 package func ggml_backend_load_all() {}
+package func ggml_backend_dev_count() {}
 
 package func llama_backend_init() {}
 package func llama_backend_free() {}

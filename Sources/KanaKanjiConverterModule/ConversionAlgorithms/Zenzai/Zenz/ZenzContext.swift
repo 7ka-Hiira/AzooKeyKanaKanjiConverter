@@ -60,12 +60,14 @@ enum ZenzError: LocalizedError {
     case couldNotLoadModel(path: String)
     case couldNotLoadContext
     case couldNotLoadVocab
+    case noDevicesAvailable
 
     var errorDescription: String? {
         switch self {
         case .couldNotLoadContext: return "failed to load context"
         case .couldNotLoadModel(path: let path): return "could not load model weight at \(path)"
         case .couldNotLoadVocab: return "failed to load vocab"
+        case .noDevicesAvailable: return "no llama.cpp compatible device available"
         }
     }
 }
@@ -105,6 +107,13 @@ final class ZenzContext {
     static func createContext(path: String) throws -> ZenzContext {
         llama_backend_init()
         ggml_backend_load_all();
+
+        let deviceCount = ggml_backend_dev_count()
+        if deviceCount == 0 {
+            debug("No backend devices available")
+            throw ZenzError.noDevicesAvailable
+        }
+
         var model_params = llama_model_default_params()
         model_params.use_mmap = true
         #if ZenzaiCPU
