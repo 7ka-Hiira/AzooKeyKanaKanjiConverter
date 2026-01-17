@@ -347,7 +347,7 @@ public final class KanaKanjiConverter {
                 lastpart = newlastPart
                 // 結果がemptyでなければ
                 if !predictions.isEmpty {
-                    candidates += predictions
+                    candidates.append(contentsOf: consume predictions)
                     count += 1
                 }
             } else {
@@ -358,10 +358,28 @@ public final class KanaKanjiConverter {
                 // 結果がemptyでなければ
                 if !predictions.isEmpty {
                     // 結果に追加
-                    candidates += predictions
+                    candidates.append(contentsOf: consume predictions)
                     count += 1
                 }
             }
+        }
+        // 入力全体を使って予測候補を作る
+        if !prepart.isEmpty, let lastpart {
+            var fullClause = prepart.clauses.first!.clause
+            for unit in prepart.clauses.dropFirst() {
+                fullClause.merge(with: unit.clause)
+            }
+            fullClause.merge(with: lastpart.clause)
+            let emptyPrepart = CandidateData(clauses: [], data: [])
+            let predictions = converter.getPredictionCandidates(
+                composingText: composingText,
+                prepart: emptyPrepart,
+                lastClause: fullClause,
+                N_best: 5,
+                dicdataStoreState: self.dicdataStoreState
+            )
+            print(fullClause.text, predictions)
+            candidates.append(contentsOf: consume predictions)
         }
         return candidates
     }
@@ -492,14 +510,14 @@ public final class KanaKanjiConverter {
         let clauseResult = result.result.getCandidateData()
         if clauseResult.isEmpty {
             let candidates = self.getUniqueCandidate(self.getAdditionalCandidate(inputData, options: options))
-            return ConversionResult(mainResults: candidates, firstClauseResults: candidates)   // アーリーリターン
+            return ConversionResult(mainResults: candidates, predictionResults: [], englishPredictionResults: [], firstClauseResults: candidates)   // アーリーリターン
         }
 
         // 予測変換用のベスト候補
         var bestCandidateDataForPrediction: CandidateData?
         // 文章全体を変換した場合の候補上位5件を作る（不要なときはlazyで中間配列を避ける）
         let wholeSentenceUniqueCandidates: [Candidate]
-        if options.requireJapanesePrediction {
+        if options.requireJapanesePrediction.isEnabled {
             let clauseResultCandidates = clauseResult.map { self.converter.processClauseCandidate($0) }
             bestCandidateDataForPrediction = zip(clauseResult, clauseResultCandidates).max {$0.1.value < $1.1.value}!.0
             wholeSentenceUniqueCandidates = self.getUniqueCandidate(clauseResultCandidates)
@@ -531,9 +549,9 @@ public final class KanaKanjiConverter {
         if case .完全一致 = options.requestQuery {
             let merged = self.getUniqueCandidate(wholeSentenceUniqueCandidates.chained(userShortcutsCandidates))
             if options.zenzaiMode.enabled {
-                return ConversionResult(mainResults: consume merged, firstClauseResults: [])
+                return ConversionResult(mainResults: consume merged, predictionResults: [], englishPredictionResults: [], firstClauseResults: [])
             } else {
-                return ConversionResult(mainResults: (consume merged).sorted(by: {$0.value > $1.value}), firstClauseResults: [])
+                return ConversionResult(mainResults: (consume merged).sorted(by: {$0.value > $1.value}), predictionResults: [], englishPredictionResults: [], firstClauseResults: [])
             }
         }
         // モデル重みを統合
@@ -552,24 +570,37 @@ public final class KanaKanjiConverter {
             bestFiveSentenceCandidates = wholeSentenceUniqueCandidates.min(count: 5, sortedBy: {$0.value > $1.value})
         }
 
+        var predictionResults: [Candidate] = []
+        var englishPredictionResults: [Candidate] = []
         let fullCandidates: [Candidate]
         do {
             // 予測変換を最大3件作成する（必要な場合のみsumsを構築）
-            let bestThreePredictionCandidates: [Candidate] = if options.requireJapanesePrediction, let bestCandidateDataForPrediction {
-                self.getUniqueCandidate(
+            let bestThreePredictionCandidates: [Candidate]
+            if options.requireJapanesePrediction.isEnabled, let bestCandidateDataForPrediction {
+                let candidates = self.getUniqueCandidate(
                     self.getPredictionCandidate(bestCandidateDataForPrediction, composingText: inputData, options: options)
                 ).min(count: 3, sortedBy: {$0.value > $1.value})
+                predictionResults = candidates
+                if options.requireJapanesePrediction.shouldMix {
+                    bestThreePredictionCandidates = candidates
+                } else {
+                    bestThreePredictionCandidates = []
+                }
             } else {
-                []
+                bestThreePredictionCandidates = []
             }
             // 英単語の予測変換。appleのapiを使うため、処理が異なる。
             var foreignCandidates: [Candidate] = []
-
-            if options.requireEnglishPrediction {
-                foreignCandidates.append(contentsOf: self.getForeignPredictionCandidate(inputData: inputData, language: "en-US"))
-            }
-            if options.keyboardLanguage == .el_GR {
-                foreignCandidates.append(contentsOf: self.getForeignPredictionCandidate(inputData: inputData, language: "el"))
+            if options.requireEnglishPrediction.isEnabled {
+                var englishCandidates: [Candidate] = []
+                englishCandidates.append(contentsOf: self.getForeignPredictionCandidate(inputData: inputData, language: "en-US"))
+                if options.keyboardLanguage == .el_GR {
+                    englishCandidates.append(contentsOf: self.getForeignPredictionCandidate(inputData: inputData, language: "el"))
+                }
+                englishPredictionResults = englishCandidates
+                if options.requireEnglishPrediction.shouldMix {
+                    foreignCandidates.append(contentsOf: englishCandidates)
+                }
             }
             // その他のトップレベル変換（先頭に表示されうる変換候補）
             let topLevelAdditionalCandidates = self.getTopLevelAdditionalCandidate(inputData, options: options)
@@ -673,7 +704,15 @@ public final class KanaKanjiConverter {
             item.withActions(self.getAppropriateActions(item))
             item.parseTemplate()
         }
-        return ConversionResult(mainResults: result, firstClauseResults: firstClauseResults)
+        predictionResults.mutatingForEach { item in
+            item.withActions(self.getAppropriateActions(item))
+            item.parseTemplate()
+        }
+        englishPredictionResults.mutatingForEach { item in
+            item.withActions(self.getAppropriateActions(item))
+            item.parseTemplate()
+        }
+        return ConversionResult(mainResults: result, predictionResults: predictionResults, englishPredictionResults: englishPredictionResults, firstClauseResults: firstClauseResults)
     }
 
     /// 入力からラティスを構築する関数。状況に応じて呼ぶ関数を分ける。
@@ -776,7 +815,7 @@ public final class KanaKanjiConverter {
         debug("requestCandidates 入力は", inputData)
         // 変換対象が無の場合
         if inputData.convertTarget.isEmpty {
-            return ConversionResult(mainResults: [], firstClauseResults: [])
+            return ConversionResult(mainResults: [], predictionResults: [], englishPredictionResults: [], firstClauseResults: [])
         }
         if options.shouldResetMemory {
             self.resetMemory()
@@ -789,7 +828,7 @@ public final class KanaKanjiConverter {
         #endif
 
         guard let result = self.convertToLattice(inputData, N_best: options.N_best, zenzaiMode: options.zenzaiMode, needTypoCorrection: needTypoCorrection) else {
-            return ConversionResult(mainResults: [], firstClauseResults: [])
+            return ConversionResult(mainResults: [], predictionResults: [], englishPredictionResults: [], firstClauseResults: [])
         }
 
         return self.processResult(inputData: inputData, result: result, options: options)

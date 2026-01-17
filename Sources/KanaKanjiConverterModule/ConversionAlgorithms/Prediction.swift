@@ -51,8 +51,8 @@ extension Kana2Kanji {
         let osuserdict: [DicdataElement] = dicdataStore.getPrefixMatchDynamicUserDict(lastRuby, state: dicdataStoreState)
 
         let lastCandidate: Candidate = prepart.isEmpty ? Candidate(text: "", value: .zero, composingCount: .inputCount(0), lastMid: MIDData.EOS.mid, data: []) : self.processClauseCandidate(prepart)
-        let lastRcid: Int = lastCandidate.data.last?.rcid ?? CIDData.EOS.cid
-        let nextLcid: Int = prepart.lastClause?.nextLcid ?? CIDData.EOS.cid
+        let lastRcid: Int = lastCandidate.data.last?.rcid ?? CIDData.BOS.cid
+        let nextLcid: Int = prepart.lastClause?.nextLcid ?? CIDData.BOS.cid
         let lastMid: Int = lastCandidate.lastMid
         let composingCount: ComposingCount = .composite(lastCandidate.composingCount, .surfaceCount(lastRubyCount))
         let ignoreCCValue: PValue = self.dicdataStore.getCCValue(lastRcid, nextLcid)
@@ -92,7 +92,7 @@ extension Kana2Kanji {
             let includeMMValueCalculation = DicdataStore.includeMMValueCalculation(data)
             let mmValue: PValue = includeMMValueCalculation ? self.dicdataStore.getMMValue(lastMid, data.mid) : .zero
             let ccValue: PValue = ccLatter.get(data.lcid)
-            let penalty: PValue = -PValue(data.ruby.count &- lastRuby.count) * 3.0   // 文字数差をペナルティとする
+            let penalty: PValue = -PValue(data.ruby.count &- lastRuby.count) * 1.0   // 文字数差をペナルティとする
             let wValue: PValue = data.value()
             let newValue: PValue = lastCandidate.value + mmValue + ccValue + wValue + penalty - ignoreCCValue
             // 追加すべきindexを取得する
