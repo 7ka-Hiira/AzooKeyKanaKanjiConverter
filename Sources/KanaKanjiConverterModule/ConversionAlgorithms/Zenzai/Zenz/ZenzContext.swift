@@ -104,6 +104,7 @@ final class ZenzContext {
 
     static func createContext(path: String) throws -> ZenzContext {
         llama_backend_init()
+        ggml_backend_load_all();
         var model_params = llama_model_default_params()
         model_params.use_mmap = true
         #if ZenzaiCPU
