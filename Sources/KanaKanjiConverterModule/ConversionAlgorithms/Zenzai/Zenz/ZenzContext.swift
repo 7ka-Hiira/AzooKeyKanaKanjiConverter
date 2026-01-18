@@ -238,19 +238,29 @@ final class ZenzContext {
         model_params.use_mmap = true
         
         #if Zenzai
-        // Configure GPU layers and split mode based on device config
+        // Configure GPU layers based on device config
         model_params.n_gpu_layers = deviceConfig.gpuLayers
         
-        if deviceConfig.gpuLayers > 0 {
-            // GPU mode: use default split mode (LAYER)
-            model_params.split_mode = LLAMA_SPLIT_MODE_LAYER
-        } else {
-            // CPU mode: no splitting
-            model_params.split_mode = LLAMA_SPLIT_MODE_NONE
+        // Set device if specified
+        if let deviceName = deviceConfig.deviceName {
+            if let device = ggml_backend_dev_by_name(deviceName) {
+                var deviceArray = [device, nil]
+                let devicePtr = UnsafeMutablePointer<ggml_backend_dev_t?>.allocate(capacity: 2)
+                devicePtr.initialize(from: &deviceArray, count: 2)
+                model_params.devices = devicePtr
+            }
         }
         #endif
         
         let model = llama_model_load_from_file(path, model_params)
+        
+        #if Zenzai
+        // Free the allocated device pointer if it was set
+        if model_params.devices != nil {
+            model_params.devices?.deallocate()
+        }
+        #endif
+        
         guard let model else {
             debug("Could not load model at \(path)")
             throw ZenzError.couldNotLoadModel(path: path)
@@ -287,19 +297,29 @@ final class ZenzContext {
         model_params.use_mmap = true
         
         #if Zenzai
-        // Configure GPU layers and split mode based on device config
+        // Configure GPU layers based on device config
         model_params.n_gpu_layers = newConfig.gpuLayers
         
-        if newConfig.gpuLayers > 0 {
-            // GPU mode: use default split mode (LAYER)
-            model_params.split_mode = LLAMA_SPLIT_MODE_LAYER
-        } else {
-            // CPU mode: no splitting
-            model_params.split_mode = LLAMA_SPLIT_MODE_NONE
+        // Set device if specified
+        if let deviceName = newConfig.deviceName {
+            if let device = ggml_backend_dev_by_name(deviceName) {
+                var deviceArray = [device, nil]
+                let devicePtr = UnsafeMutablePointer<ggml_backend_dev_t?>.allocate(capacity: 2)
+                devicePtr.initialize(from: &deviceArray, count: 2)
+                model_params.devices = devicePtr
+            }
         }
         #endif
         
         let model = llama_model_load_from_file(self.modelPath, model_params)
+        
+        #if Zenzai
+        // Free the allocated device pointer if it was set
+        if model_params.devices != nil {
+            model_params.devices?.deallocate()
+        }
+        #endif
+        
         guard let model else {
             debug("Could not reload model at \(self.modelPath)")
             throw ZenzError.couldNotLoadModel(path: self.modelPath)

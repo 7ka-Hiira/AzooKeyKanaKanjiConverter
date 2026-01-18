@@ -36,6 +36,7 @@ package typealias ggml_backend_dev_t = OpaquePointer
 package func ggml_backend_load_all() {}
 package func ggml_backend_dev_count() -> Int { unimplemented() }
 package func ggml_backend_dev_get(_: Int) -> ggml_backend_dev_t? { unimplemented() }
+package func ggml_backend_dev_by_name(_: String) -> ggml_backend_dev_t? { unimplemented() }
 package func ggml_backend_dev_name(_: ggml_backend_dev_t) -> UnsafePointer<CChar>? { unimplemented() }
 package func ggml_backend_dev_description(_: ggml_backend_dev_t) -> UnsafePointer<CChar>? { unimplemented() }
 package func ggml_backend_dev_type(_: ggml_backend_dev_t) -> Int32 { unimplemented() }
@@ -45,15 +46,10 @@ package let GGML_BACKEND_DEVICE_TYPE_CPU: Int32 = 0
 package let GGML_BACKEND_DEVICE_TYPE_GPU: Int32 = 1
 package let GGML_BACKEND_DEVICE_TYPE_ACCEL: Int32 = 2
 
-// Split mode constants
-package let LLAMA_SPLIT_MODE_NONE: Int32 = 0
-package let LLAMA_SPLIT_MODE_LAYER: Int32 = 1
-package let LLAMA_SPLIT_MODE_ROW: Int32 = 2
-
 package struct llama_model_params {
     package var use_mmap: Bool
     package var n_gpu_layers: Int32
-    package var split_mode: Int32  // llama_split_mode enum
+    package var devices: UnsafeMutablePointer<ggml_backend_dev_t?>?
 }
 package func llama_model_default_params() -> llama_model_params { unimplemented() }
 
