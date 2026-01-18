@@ -82,10 +82,9 @@ public func loadGGMLBackends() {
 /// Create a device configuration based on device type detection
 /// - Parameters:
 ///   - deviceName: Optional device name. If nil, uses the best available device.
-///   - preferGPU: If true and GPU is available, configures for GPU with specified layers. Default is true.
-///   - gpuLayers: Number of GPU layers when GPU is used. Default is 13.
+///   - gpuLayers: Number of GPU layers when GPU is used. Default is 99.
 /// - Returns: A configured ZenzaiDeviceConfig
-public func createDeviceConfig(deviceName: String? = nil, preferGPU: Bool = true, gpuLayers: Int32 = 13) -> ZenzaiDeviceConfig {
+public func createDeviceConfig(deviceName: String? = nil, gpuLayers: Int32 = 99) -> ZenzaiDeviceConfig {
     #if Zenzai
     let devices = enumerateGGMLBackendDevices()
     
@@ -98,13 +97,6 @@ public func createDeviceConfig(deviceName: String? = nil, preferGPU: Bool = true
             case .cpu, .accel, .unknown:
                 return ZenzaiDeviceConfig(deviceName: targetName, gpuLayers: 0)
             }
-        }
-    }
-    
-    // Auto-detect best device
-    if preferGPU {
-        if let gpuDevice = devices.first(where: { $0.type == .gpu }) {
-            return ZenzaiDeviceConfig(deviceName: gpuDevice.name, gpuLayers: gpuLayers)
         }
     }
     
