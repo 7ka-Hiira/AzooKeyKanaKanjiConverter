@@ -9,6 +9,9 @@ import Foundation
 import HeapModule
 import SwiftUtils
 
+// Type alias for convenience
+public typealias ZenzaiDeviceConfig = ConvertRequestOptions.ZenzaiMode.DeviceConfig
+
 /// GGML backend device information
 public struct GGMLBackendDevice: Sendable {
     public let name: String
@@ -49,17 +52,6 @@ public struct GGMLBackendDevice: Sendable {
         }
     }
     #endif
-}
-
-/// Configuration for Zenzai backend device
-public struct ZenzaiDeviceConfig: Sendable {
-    public var deviceName: String?
-    public var gpuLayers: Int32
-    
-    public init(deviceName: String? = nil, gpuLayers: Int32 = 0) {
-        self.deviceName = deviceName
-        self.gpuLayers = gpuLayers
-    }
 }
 
 /// Enumerate available GGML backend devices

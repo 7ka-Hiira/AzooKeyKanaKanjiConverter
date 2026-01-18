@@ -81,8 +81,7 @@ public final class KanaKanjiConverter {
             if let currentConfig = model.getDeviceConfig(), currentConfig.deviceName != deviceConfig.deviceName || currentConfig.gpuLayers != deviceConfig.gpuLayers {
                 do {
                     #if Zenzai
-                    let zenzaiConfig = ZenzaiDeviceConfig(deviceName: deviceConfig.deviceName, gpuLayers: deviceConfig.gpuLayers)
-                    try model.updateDeviceConfig(zenzaiConfig)
+                    try model.updateDeviceConfig(deviceConfig)
                     #endif
                     self.zenzStatus = "updated device config for \(modelURL.absoluteString)"
                 } catch {
@@ -94,8 +93,7 @@ public final class KanaKanjiConverter {
         } else {
             do {
                 #if Zenzai
-                let zenzaiConfig = ZenzaiDeviceConfig(deviceName: deviceConfig.deviceName, gpuLayers: deviceConfig.gpuLayers)
-                self.zenz = try Zenz(resourceURL: modelURL, deviceConfig: zenzaiConfig)
+                self.zenz = try Zenz(resourceURL: modelURL, deviceConfig: deviceConfig)
                 #else
                 self.zenz = try Zenz(resourceURL: modelURL)
                 #endif
