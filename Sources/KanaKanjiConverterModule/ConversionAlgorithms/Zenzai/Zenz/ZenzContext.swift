@@ -79,6 +79,47 @@ package func enumerateGGMLBackendDevices() -> [GGMLBackendDevice] {
     #endif
 }
 
+/// Create a device configuration based on device type detection
+/// - Parameters:
+///   - deviceName: Optional device name. If nil, uses the best available device.
+///   - preferGPU: If true and GPU is available, configures for GPU with specified layers. Default is true.
+///   - gpuLayers: Number of GPU layers when GPU is used. Default is 13.
+/// - Returns: A configured ZenzaiDeviceConfig
+package func createDeviceConfig(deviceName: String? = nil, preferGPU: Bool = true, gpuLayers: Int32 = 13) -> ZenzaiDeviceConfig {
+    #if Zenzai
+    let devices = enumerateGGMLBackendDevices()
+    
+    // If a specific device name is provided, try to find it
+    if let targetName = deviceName {
+        if let device = devices.first(where: { $0.name == targetName }) {
+            switch device.type {
+            case .gpu:
+                return ZenzaiDeviceConfig(deviceName: targetName, gpuLayers: gpuLayers)
+            case .cpu, .accel, .unknown:
+                return ZenzaiDeviceConfig(deviceName: targetName, gpuLayers: 0)
+            }
+        }
+    }
+    
+    // Auto-detect best device
+    if preferGPU {
+        if let gpuDevice = devices.first(where: { $0.type == .gpu }) {
+            return ZenzaiDeviceConfig(deviceName: gpuDevice.name, gpuLayers: gpuLayers)
+        }
+    }
+    
+    // Fall back to CPU
+    if let cpuDevice = devices.first(where: { $0.type == .cpu }) {
+        return ZenzaiDeviceConfig(deviceName: cpuDevice.name, gpuLayers: 0)
+    }
+    
+    // Default configuration
+    return ZenzaiDeviceConfig(deviceName: nil, gpuLayers: 0)
+    #else
+    return ZenzaiDeviceConfig(deviceName: nil, gpuLayers: 0)
+    #endif
+}
+
 struct FixedSizeHeap<Element: Comparable> {
     private var size: Int
     private var heap: Heap<Element>
@@ -214,7 +255,7 @@ final class ZenzContext {
             throw ZenzError.couldNotLoadModel(path: path)
         }
 
-        var params = ctx_params(deviceConfig: deviceConfig)
+        let params = ctx_params(deviceConfig: deviceConfig)
         let context = llama_init_from_model(model, params)
         guard let context else {
             debug("Could not load context!")
@@ -246,7 +287,7 @@ final class ZenzContext {
 
     func reset_context() throws {
         llama_free(self.context)
-        var params = Self.ctx_params(deviceConfig: self.currentDeviceConfig)
+        let params = Self.ctx_params(deviceConfig: self.currentDeviceConfig)
         let context = llama_init_from_model(self.model, params)
         guard let context else {
             debug("Could not load context!")
