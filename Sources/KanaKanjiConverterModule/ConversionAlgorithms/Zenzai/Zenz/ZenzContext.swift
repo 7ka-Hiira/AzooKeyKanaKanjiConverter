@@ -9,6 +9,76 @@ import Foundation
 import HeapModule
 import SwiftUtils
 
+/// GGML backend device information
+package struct GGMLBackendDevice: Sendable {
+    package let name: String
+    package let description: String
+    package let type: DeviceType
+    
+    package enum DeviceType: Sendable {
+        case cpu
+        case gpu
+        case accel
+        case unknown
+    }
+    
+    #if Zenzai
+    init(device: ggml_backend_dev_t) {
+        if let namePtr = ggml_backend_dev_name(device) {
+            self.name = String(cString: namePtr)
+        } else {
+            self.name = "Unknown"
+        }
+        
+        if let descPtr = ggml_backend_dev_description(device) {
+            self.description = String(cString: descPtr)
+        } else {
+            self.description = "Unknown"
+        }
+        
+        let deviceType = ggml_backend_dev_type(device)
+        switch deviceType {
+        case GGML_BACKEND_DEVICE_TYPE_CPU:
+            self.type = .cpu
+        case GGML_BACKEND_DEVICE_TYPE_GPU:
+            self.type = .gpu
+        case GGML_BACKEND_DEVICE_TYPE_ACCEL:
+            self.type = .accel
+        default:
+            self.type = .unknown
+        }
+    }
+    #endif
+}
+
+/// Configuration for Zenzai backend device
+package struct ZenzaiDeviceConfig: Sendable {
+    package var deviceName: String?
+    package var gpuLayers: Int32
+    
+    package init(deviceName: String? = nil, gpuLayers: Int32 = 0) {
+        self.deviceName = deviceName
+        self.gpuLayers = gpuLayers
+    }
+}
+
+/// Enumerate available GGML backend devices
+package func enumerateGGMLBackendDevices() -> [GGMLBackendDevice] {
+    #if Zenzai
+    ggml_backend_load_all()
+    let deviceCount = ggml_backend_dev_count()
+    var devices: [GGMLBackendDevice] = []
+    for i in 0..<deviceCount {
+        if let device = ggml_backend_dev_get(i) {
+            devices.append(GGMLBackendDevice(device: device))
+        }
+    }
+    return devices
+    #else
+    return []
+    #endif
+}
+
 struct FixedSizeHeap<Element: Comparable> {
     private var size: Int
     private var heap: Heap<Element>
@@ -76,13 +146,15 @@ final class ZenzContext {
     private var vocab: OpaquePointer
     private var prevInput: [llama_token] = []
     private var prevPrompt: [llama_token] = []
+    private var currentDeviceConfig: ZenzaiDeviceConfig
 
     private let n_len: Int32 = 512
 
-    init(model: OpaquePointer, context: OpaquePointer, vocab: OpaquePointer) {
+    init(model: OpaquePointer, context: OpaquePointer, vocab: OpaquePointer, deviceConfig: ZenzaiDeviceConfig) {
         self.model = model
         self.context = context
         self.vocab = vocab
+        self.currentDeviceConfig = deviceConfig
     }
 
     deinit {
@@ -91,7 +163,7 @@ final class ZenzContext {
         llama_backend_free()
     }
 
-    private static var ctx_params: llama_context_params {
+    private static func ctx_params(deviceConfig: ZenzaiDeviceConfig) -> llama_context_params {
         let n_threads = max(1, min(8, ProcessInfo.processInfo.processorCount - 2))
         debug("Using \(n_threads) threads")
         var ctx_params = llama_context_default_params()
@@ -99,20 +171,50 @@ final class ZenzContext {
         ctx_params.n_threads       = Int32(n_threads)
         ctx_params.n_threads_batch = Int32(n_threads)
         ctx_params.n_batch = 512
+        
+        // Configure offload_kqv based on device type
+        #if Zenzai
+        if deviceConfig.gpuLayers > 0 {
+            ctx_params.offload_kqv = true
+        } else {
+            ctx_params.offload_kqv = false
+        }
+        #endif
+        
         return ctx_params
     }
 
-    static func createContext(path: String) throws -> ZenzContext {
+    static func createContext(path: String, deviceConfig: ZenzaiDeviceConfig = ZenzaiDeviceConfig()) throws -> ZenzContext {
+        #if Zenzai
+        // Load all available backends for dynamic backend support
+        ggml_backend_load_all()
+        #endif
+        
         llama_backend_init()
         var model_params = llama_model_default_params()
         model_params.use_mmap = true
+        
+        #if Zenzai
+        // Configure GPU layers and split mode based on device config
+        model_params.n_gpu_layers = deviceConfig.gpuLayers
+        
+        if deviceConfig.gpuLayers > 0 {
+            // GPU mode: use default split mode (LAYER)
+            model_params.split_mode = LLAMA_SPLIT_MODE_LAYER
+        } else {
+            // CPU mode: no splitting
+            model_params.split_mode = LLAMA_SPLIT_MODE_NONE
+        }
+        model_params.main_gpu = 0
+        #endif
+        
         let model = llama_model_load_from_file(path, model_params)
         guard let model else {
             debug("Could not load model at \(path)")
             throw ZenzError.couldNotLoadModel(path: path)
         }
 
-        var params = ctx_params
+        var params = ctx_params(deviceConfig: deviceConfig)
         let context = llama_init_from_model(model, params)
         guard let context else {
             debug("Could not load context!")
@@ -125,12 +227,26 @@ final class ZenzContext {
             throw ZenzError.couldNotLoadVocab
         }
 
-        return ZenzContext(model: model, context: context, vocab: vocab)
+        return ZenzContext(model: model, context: context, vocab: vocab, deviceConfig: deviceConfig)
+    }
+    
+    /// Update device configuration dynamically
+    func updateDeviceConfig(_ newConfig: ZenzaiDeviceConfig) throws {
+        // Store the new config
+        self.currentDeviceConfig = newConfig
+        
+        // Reset context with new parameters
+        try self.reset_context()
+    }
+    
+    /// Get current device configuration
+    func getDeviceConfig() -> ZenzaiDeviceConfig {
+        return self.currentDeviceConfig
     }
 
     func reset_context() throws {
         llama_free(self.context)
-        var params = Self.ctx_params
+        var params = Self.ctx_params(deviceConfig: self.currentDeviceConfig)
         let context = llama_init_from_model(self.model, params)
         guard let context else {
             debug("Could not load context!")

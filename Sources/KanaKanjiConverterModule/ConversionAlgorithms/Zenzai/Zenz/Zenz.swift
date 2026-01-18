@@ -2,24 +2,30 @@ import EfficientNGram
 package import Foundation
 import SwiftUtils
 
+/// Enumerate available GGML backend devices
+package func enumerateBackendDevices() -> [GGMLBackendDevice] {
+    return enumerateGGMLBackendDevices()
+}
+
 package final class Zenz {
     package var resourceURL: URL
     private var zenzContext: ZenzContext?
-    init(resourceURL: URL) throws {
+    
+    init(resourceURL: URL, deviceConfig: ZenzaiDeviceConfig = ZenzaiDeviceConfig()) throws {
         self.resourceURL = resourceURL
         do {
             #if canImport(Darwin)
             if #available(iOS 16, macOS 13, *) {
-                self.zenzContext = try ZenzContext.createContext(path: resourceURL.path(percentEncoded: false))
+                self.zenzContext = try ZenzContext.createContext(path: resourceURL.path(percentEncoded: false), deviceConfig: deviceConfig)
             } else {
                 // this is not percent-encoded
-                self.zenzContext = try ZenzContext.createContext(path: resourceURL.path)
+                self.zenzContext = try ZenzContext.createContext(path: resourceURL.path, deviceConfig: deviceConfig)
             }
             #else
             // this is not percent-encoded
-            self.zenzContext = try ZenzContext.createContext(path: resourceURL.path)
+            self.zenzContext = try ZenzContext.createContext(path: resourceURL.path, deviceConfig: deviceConfig)
             #endif
-            debug("Loaded model \(resourceURL.lastPathComponent)")
+            debug("Loaded model \(resourceURL.lastPathComponent) with device config: \(deviceConfig)")
         } catch {
             throw error
         }
@@ -27,6 +33,16 @@ package final class Zenz {
 
     package func endSession() {
         try? self.zenzContext?.reset_context()
+    }
+    
+    /// Update device configuration dynamically
+    package func updateDeviceConfig(_ newConfig: ZenzaiDeviceConfig) throws {
+        try self.zenzContext?.updateDeviceConfig(newConfig)
+    }
+    
+    /// Get current device configuration
+    package func getDeviceConfig() -> ZenzaiDeviceConfig? {
+        return self.zenzContext?.getDeviceConfig()
     }
 
     func candidateEvaluate(
