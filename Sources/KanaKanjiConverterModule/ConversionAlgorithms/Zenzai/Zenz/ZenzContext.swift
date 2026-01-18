@@ -188,14 +188,16 @@ final class ZenzContext {
     private var prevInput: [llama_token] = []
     private var prevPrompt: [llama_token] = []
     private var currentDeviceConfig: ZenzaiDeviceConfig
+    private var modelPath: String
 
     private let n_len: Int32 = 512
 
-    init(model: OpaquePointer, context: OpaquePointer, vocab: OpaquePointer, deviceConfig: ZenzaiDeviceConfig) {
+    init(model: OpaquePointer, context: OpaquePointer, vocab: OpaquePointer, deviceConfig: ZenzaiDeviceConfig, modelPath: String) {
         self.model = model
         self.context = context
         self.vocab = vocab
         self.currentDeviceConfig = deviceConfig
+        self.modelPath = modelPath
     }
 
     deinit {
@@ -268,16 +270,64 @@ final class ZenzContext {
             throw ZenzError.couldNotLoadVocab
         }
 
-        return ZenzContext(model: model, context: context, vocab: vocab, deviceConfig: deviceConfig)
+        return ZenzContext(model: model, context: context, vocab: vocab, deviceConfig: deviceConfig, modelPath: path)
     }
     
     /// Update device configuration dynamically
+    /// This will unload and reload the model with new parameters
     func updateDeviceConfig(_ newConfig: ZenzaiDeviceConfig) throws {
         // Store the new config
         self.currentDeviceConfig = newConfig
         
-        // Reset context with new parameters
-        try self.reset_context()
+        // Free existing resources
+        llama_free(self.context)
+        llama_model_free(self.model)
+        
+        // Reload model with new parameters
+        var model_params = llama_model_default_params()
+        model_params.use_mmap = true
+        
+        #if Zenzai
+        // Configure GPU layers and split mode based on device config
+        model_params.n_gpu_layers = newConfig.gpuLayers
+        
+        if newConfig.gpuLayers > 0 {
+            // GPU mode: use default split mode (LAYER)
+            model_params.split_mode = LLAMA_SPLIT_MODE_LAYER
+        } else {
+            // CPU mode: no splitting
+            model_params.split_mode = LLAMA_SPLIT_MODE_NONE
+        }
+        model_params.main_gpu = 0
+        #endif
+        
+        let model = llama_model_load_from_file(self.modelPath, model_params)
+        guard let model else {
+            debug("Could not reload model at \(self.modelPath)")
+            throw ZenzError.couldNotLoadModel(path: self.modelPath)
+        }
+        self.model = model
+        
+        // Reload context with new parameters
+        let params = Self.ctx_params(deviceConfig: newConfig)
+        let context = llama_init_from_model(model, params)
+        guard let context else {
+            debug("Could not load context!")
+            throw ZenzError.couldNotLoadContext
+        }
+        self.context = context
+        
+        // Reload vocab
+        let vocab = llama_model_get_vocab(model)
+        guard let vocab else {
+            debug("Could not load vocab!")
+            throw ZenzError.couldNotLoadVocab
+        }
+        self.vocab = vocab
+        
+        // Reset state
+        self.prevInput = []
+        self.prevPrompt = []
     }
     
     /// Get current device configuration
