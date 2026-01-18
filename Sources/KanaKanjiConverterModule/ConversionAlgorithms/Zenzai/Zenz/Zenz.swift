@@ -2,11 +2,6 @@ import EfficientNGram
 package import Foundation
 import SwiftUtils
 
-/// Enumerate available GGML backend devices
-public func enumerateBackendDevices() -> [GGMLBackendDevice] {
-    return enumerateGGMLBackendDevices()
-}
-
 package final class Zenz {
     package var resourceURL: URL
     private var zenzContext: ZenzContext?

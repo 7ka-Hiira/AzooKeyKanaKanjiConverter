@@ -119,7 +119,7 @@ package func createDeviceConfig(
 - `init`メソッドに`deviceConfig`パラメータを追加（デフォルト値あり）
 - `updateDeviceConfig`メソッドを追加
 - `getDeviceConfig`メソッドを追加
-- `enumerateBackendDevices()`関数をエクスポート
+- `enumerateGGMLBackendDevices()`関数をエクスポート
 
 ### 5. ConvertRequestOptions.swiftの更新
 
@@ -169,7 +169,7 @@ import KanaKanjiConverterModule
 
 // デバイスを列挙
 #if Zenzai
-let devices = enumerateBackendDevices()
+let devices = enumerateGGMLBackendDevices()
 for device in devices {
     print("Device: \(device.name) - \(device.description)")
 }

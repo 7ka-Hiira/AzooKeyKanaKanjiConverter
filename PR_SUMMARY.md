@@ -31,7 +31,7 @@
 5. **公開API**
    - `ConvertRequestOptions.ZenzaiMode.DeviceConfig` - デバイス設定構造体
    - `createDeviceConfig()` - 自動検出ヘルパー関数
-   - `enumerateBackendDevices()` - デバイス列挙関数
+   - `enumerateGGMLBackendDevices()` - デバイス列挙関数
 
 ## 変更ファイル
 
@@ -48,7 +48,7 @@
 
 ```swift
 // デバイスを列挙
-let devices = enumerateBackendDevices()
+let devices = enumerateGGMLBackendDevices()
 for device in devices {
     print("Device: \(device.name) - \(device.description)")
 }

@@ -63,9 +63,9 @@ public struct ZenzaiDeviceConfig: Sendable {
 }
 
 /// Enumerate available GGML backend devices
+/// Note: ggml_backend_load_all() should be called once before using this function
 public func enumerateGGMLBackendDevices() -> [GGMLBackendDevice] {
     #if Zenzai
-    ggml_backend_load_all()
     let deviceCount = ggml_backend_dev_count()
     var devices: [GGMLBackendDevice] = []
     for i in 0..<deviceCount {

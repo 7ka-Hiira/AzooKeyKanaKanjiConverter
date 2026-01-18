@@ -21,7 +21,7 @@ You can enumerate all available GGML backend devices:
 import KanaKanjiConverterModule
 
 // Enumerate all available backend devices
-let devices = enumerateBackendDevices()
+let devices = enumerateGGMLBackendDevices()
 for device in devices {
     print("Device: \(device.name)")
     print("Description: \(device.description)")
@@ -110,7 +110,7 @@ import Foundation
 
 // 1. Enumerate devices (optional)
 #if Zenzai
-let devices = enumerateBackendDevices()
+let devices = enumerateGGMLBackendDevices()
 print("Available devices:")
 for device in devices {
     print("- \(device.name): \(device.description) (Type: \(device.type))")
