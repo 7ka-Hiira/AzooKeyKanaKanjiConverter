@@ -55,7 +55,7 @@ public struct GGMLBackendDevice: Sendable {
 }
 
 /// Enumerate available GGML backend devices
-/// Note: ggml_backend_load_all() should be called once before using this function
+/// Note: loadGGMLBackends() should be called once before using this function
 public func enumerateGGMLBackendDevices() -> [GGMLBackendDevice] {
     #if Zenzai
     let deviceCount = ggml_backend_dev_count()
@@ -68,6 +68,14 @@ public func enumerateGGMLBackendDevices() -> [GGMLBackendDevice] {
     return devices
     #else
     return []
+    #endif
+}
+
+/// Load all available GGML backends
+/// This function should be called once at application startup before using any Zenzai features
+public func loadGGMLBackends() {
+    #if Zenzai
+    ggml_backend_load_all()
     #endif
 }
 
@@ -220,11 +228,6 @@ final class ZenzContext {
     }
 
     static func createContext(path: String, deviceConfig: ZenzaiDeviceConfig = ZenzaiDeviceConfig()) throws -> ZenzContext {
-        #if Zenzai
-        // Load all available backends for dynamic backend support
-        ggml_backend_load_all()
-        #endif
-        
         llama_backend_init()
         var model_params = llama_model_default_params()
         model_params.use_mmap = true
