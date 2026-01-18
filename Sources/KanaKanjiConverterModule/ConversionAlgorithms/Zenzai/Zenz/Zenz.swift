@@ -3,7 +3,7 @@ package import Foundation
 import SwiftUtils
 
 /// Enumerate available GGML backend devices
-package func enumerateBackendDevices() -> [GGMLBackendDevice] {
+public func enumerateBackendDevices() -> [GGMLBackendDevice] {
     return enumerateGGMLBackendDevices()
 }
 
@@ -36,12 +36,12 @@ package final class Zenz {
     }
     
     /// Update device configuration dynamically
-    package func updateDeviceConfig(_ newConfig: ZenzaiDeviceConfig) throws {
+    public func updateDeviceConfig(_ newConfig: ZenzaiDeviceConfig) throws {
         try self.zenzContext?.updateDeviceConfig(newConfig)
     }
     
     /// Get current device configuration
-    package func getDeviceConfig() -> ZenzaiDeviceConfig? {
+    public func getDeviceConfig() -> ZenzaiDeviceConfig? {
         return self.zenzContext?.getDeviceConfig()
     }
 

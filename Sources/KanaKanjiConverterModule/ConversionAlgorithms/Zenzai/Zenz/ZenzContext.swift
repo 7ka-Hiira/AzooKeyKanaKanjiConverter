@@ -10,12 +10,12 @@ import HeapModule
 import SwiftUtils
 
 /// GGML backend device information
-package struct GGMLBackendDevice: Sendable {
-    package let name: String
-    package let description: String
-    package let type: DeviceType
+public struct GGMLBackendDevice: Sendable {
+    public let name: String
+    public let description: String
+    public let type: DeviceType
     
-    package enum DeviceType: Sendable {
+    public enum DeviceType: Sendable {
         case cpu
         case gpu
         case accel
@@ -52,18 +52,18 @@ package struct GGMLBackendDevice: Sendable {
 }
 
 /// Configuration for Zenzai backend device
-package struct ZenzaiDeviceConfig: Sendable {
-    package var deviceName: String?
-    package var gpuLayers: Int32
+public struct ZenzaiDeviceConfig: Sendable {
+    public var deviceName: String?
+    public var gpuLayers: Int32
     
-    package init(deviceName: String? = nil, gpuLayers: Int32 = 0) {
+    public init(deviceName: String? = nil, gpuLayers: Int32 = 0) {
         self.deviceName = deviceName
         self.gpuLayers = gpuLayers
     }
 }
 
 /// Enumerate available GGML backend devices
-package func enumerateGGMLBackendDevices() -> [GGMLBackendDevice] {
+public func enumerateGGMLBackendDevices() -> [GGMLBackendDevice] {
     #if Zenzai
     ggml_backend_load_all()
     let deviceCount = ggml_backend_dev_count()
@@ -85,7 +85,7 @@ package func enumerateGGMLBackendDevices() -> [GGMLBackendDevice] {
 ///   - preferGPU: If true and GPU is available, configures for GPU with specified layers. Default is true.
 ///   - gpuLayers: Number of GPU layers when GPU is used. Default is 13.
 /// - Returns: A configured ZenzaiDeviceConfig
-package func createDeviceConfig(deviceName: String? = nil, preferGPU: Bool = true, gpuLayers: Int32 = 13) -> ZenzaiDeviceConfig {
+public func createDeviceConfig(deviceName: String? = nil, preferGPU: Bool = true, gpuLayers: Int32 = 13) -> ZenzaiDeviceConfig {
     #if Zenzai
     let devices = enumerateGGMLBackendDevices()
     
