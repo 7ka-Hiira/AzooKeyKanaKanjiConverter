@@ -58,9 +58,6 @@ if [[ "$CPU_MODE" == true ]]; then
   )
 fi
 TRAIT="Zenzai"
-if [[ "$CPU_MODE" == true ]]; then
-  TRAIT="ZenzaiCPU"
-fi
 
 # /tmp 配下に作業ディレクトリ
 WORKDIR="$(mktemp -d "/tmp/azookey_prof_XXXXXX")"

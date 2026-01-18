@@ -1,4 +1,4 @@
-#if !Zenzai && !ZenzaiCPU
+#if !Zenzai
 // Zenzaiが有効でない場合、このMock実装を有効化する
 private func unimplemented<T>() -> T {
     fatalError("unimplemented")

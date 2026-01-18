@@ -2,7 +2,7 @@ import Foundation
 @testable import KanaKanjiConverterModuleWithDefaultDictionary
 import XCTest
 
-#if Zenzai || ZenzaiCPU
+#if Zenzai
 final class ZenzaiTests: XCTestCase {
     func sequentialInput(_ composingText: inout ComposingText, sequence: String, inputStyle: KanaKanjiConverterModule.InputStyle) {
         for char in sequence {
