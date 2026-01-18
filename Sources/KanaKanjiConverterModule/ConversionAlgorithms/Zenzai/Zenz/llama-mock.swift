@@ -54,7 +54,6 @@ package struct llama_model_params {
     package var use_mmap: Bool
     package var n_gpu_layers: Int32
     package var split_mode: Int32  // llama_split_mode enum
-    package var main_gpu: Int32
 }
 package func llama_model_default_params() -> llama_model_params { unimplemented() }
 

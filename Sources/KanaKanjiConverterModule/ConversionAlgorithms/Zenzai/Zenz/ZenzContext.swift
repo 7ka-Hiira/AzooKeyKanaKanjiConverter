@@ -244,7 +244,6 @@ final class ZenzContext {
         if deviceConfig.gpuLayers > 0 {
             // GPU mode: use default split mode (LAYER)
             model_params.split_mode = LLAMA_SPLIT_MODE_LAYER
-            model_params.main_gpu = 0
         } else {
             // CPU mode: no splitting
             model_params.split_mode = LLAMA_SPLIT_MODE_NONE
@@ -294,7 +293,6 @@ final class ZenzContext {
         if newConfig.gpuLayers > 0 {
             // GPU mode: use default split mode (LAYER)
             model_params.split_mode = LLAMA_SPLIT_MODE_LAYER
-            model_params.main_gpu = 0
         } else {
             // CPU mode: no splitting
             model_params.split_mode = LLAMA_SPLIT_MODE_NONE
