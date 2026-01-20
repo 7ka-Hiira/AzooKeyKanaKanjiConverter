@@ -72,10 +72,15 @@ public func enumerateGGMLBackendDevices() -> [GGMLBackendDevice] {
 }
 
 /// Load all available GGML backends
+/// - Parameter path: Optional directory path to load backends from. If nil, uses default search paths.
 /// This function should be called once at application startup before using any Zenzai features
-public func loadGGMLBackends() {
+public func loadGGMLBackends(from path: String? = nil) {
     #if Zenzai
-    ggml_backend_load_all()
+    if let path = path {
+        ggml_backend_load_all_from_path(path)
+    } else {
+        ggml_backend_load_all()
+    }
     #endif
 }
 

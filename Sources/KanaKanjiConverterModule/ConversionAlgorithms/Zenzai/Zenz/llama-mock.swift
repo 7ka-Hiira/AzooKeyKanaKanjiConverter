@@ -34,6 +34,7 @@ package func llama_backend_free() {}
 package typealias ggml_backend_dev_t = OpaquePointer
 
 package func ggml_backend_load_all() {}
+package func ggml_backend_load_all_from_path(_: String) {}
 package func ggml_backend_dev_count() -> Int { unimplemented() }
 package func ggml_backend_dev_get(_: Int) -> ggml_backend_dev_t? { unimplemented() }
 package func ggml_backend_dev_by_name(_: String) -> ggml_backend_dev_t? { unimplemented() }
