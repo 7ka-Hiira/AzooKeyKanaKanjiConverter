@@ -1,5 +1,5 @@
-#if Zenzai || ZenzaiCPU
-// Zenzai/ZenzaiCPU が有効でない場合、llama-mock.swift の実装が利用される
+#if Zenzai
+// Zenzai が有効でない場合、llama-mock.swift の実装が利用される
 import llama
 #endif
 
@@ -8,6 +8,112 @@ import EfficientNGram
 import Foundation
 import HeapModule
 import SwiftUtils
+
+public typealias ZenzaiDeviceConfig = ConvertRequestOptions.ZenzaiMode.DeviceConfig
+
+public struct GGMLBackendDevice: Sendable {
+    public let name: String
+    public let description: String
+    public let type: DeviceType
+
+    public enum DeviceType: Sendable {
+        case cpu
+        case gpu
+        case accel
+        case unknown
+    }
+
+    #if Zenzai
+    init(device: ggml_backend_dev_t) {
+        if let namePtr = ggml_backend_dev_name(device) {
+            self.name = String(cString: namePtr)
+        } else {
+            self.name = "Unknown"
+        }
+
+        if let descPtr = ggml_backend_dev_description(device) {
+            self.description = String(cString: descPtr)
+        } else {
+            self.description = "Unknown"
+        }
+
+        let deviceType = ggml_backend_dev_type(device)
+        switch deviceType {
+        case GGML_BACKEND_DEVICE_TYPE_CPU:
+            self.type = .cpu
+        case GGML_BACKEND_DEVICE_TYPE_GPU:
+            self.type = .gpu
+        case GGML_BACKEND_DEVICE_TYPE_ACCEL:
+            self.type = .accel
+        default:
+            self.type = .unknown
+        }
+    }
+    #endif
+}
+
+/// Enumerate available GGML backend devices
+/// Note: loadGGMLBackends() should be called once before using this function
+public func enumerateGGMLBackendDevices() -> [GGMLBackendDevice] {
+    #if Zenzai
+    let deviceCount = ggml_backend_dev_count()
+    var devices: [GGMLBackendDevice] = []
+    for i in 0..<deviceCount {
+        if let device = ggml_backend_dev_get(i) {
+            devices.append(GGMLBackendDevice(device: device))
+        }
+    }
+    return devices
+    #else
+    return []
+    #endif
+}
+
+/// Load all available GGML backends
+/// - Parameter path: Optional directory path to load backends from. If nil, uses default search paths.
+/// This function should be called once at application startup before using any Zenzai features
+public func loadGGMLBackends(from path: String? = nil) {
+    #if Zenzai
+    if let path = path {
+        ggml_backend_load_all_from_path(path)
+    } else {
+        ggml_backend_load_all()
+    }
+    #endif
+}
+
+/// Create a device configuration based on device type detection
+/// - Parameters:
+///   - deviceName: Optional device name. If nil, uses the best available device.
+///   - gpuLayers: Number of GPU layers when GPU is used. Default is 99.
+/// - Returns: A configured ZenzaiDeviceConfig
+public func createDeviceConfig(deviceName: String? = nil, gpuLayers: Int32 = 99) -> ZenzaiDeviceConfig {
+    #if Zenzai
+    let devices = enumerateGGMLBackendDevices()
+
+    // If a specific device name is provided, try to find it
+    if let targetName = deviceName {
+        if let device = devices.first(where: { $0.name == targetName }) {
+            switch device.type {
+            case .gpu:
+                return ZenzaiDeviceConfig(deviceName: targetName, gpuLayers: gpuLayers)
+            case .cpu, .accel, .unknown:
+                return ZenzaiDeviceConfig(deviceName: targetName, gpuLayers: 0)
+            }
+        }
+    }
+
+    // Fall back to CPU
+    if let cpuDevice = devices.first(where: { $0.type == .cpu }) {
+        return ZenzaiDeviceConfig(deviceName: cpuDevice.name, gpuLayers: 0)
+    }
+
+    // Default configuration
+    return ZenzaiDeviceConfig(deviceName: nil, gpuLayers: 0)
+    #else
+    return ZenzaiDeviceConfig(deviceName: nil, gpuLayers: 0)
+    #endif
+}
 
 struct FixedSizeHeap<Element: Comparable> {
     private var size: Int
@@ -78,13 +184,17 @@ final class ZenzContext {
     private var vocab: OpaquePointer
     private var prevInput: [llama_token] = []
     private var prevPrompt: [llama_token] = []
+    private var currentDeviceConfig: ZenzaiDeviceConfig
+    private var modelPath: String
 
     private let n_len: Int32 = 512
 
-    init(model: OpaquePointer, context: OpaquePointer, vocab: OpaquePointer) {
+    init(model: OpaquePointer, context: OpaquePointer, vocab: OpaquePointer, deviceConfig: ZenzaiDeviceConfig, modelPath: String) {
         self.model = model
         self.context = context
         self.vocab = vocab
+        self.currentDeviceConfig = deviceConfig
+        self.modelPath = modelPath
     }
 
     deinit {
@@ -93,7 +203,7 @@ final class ZenzContext {
         llama_backend_free()
     }
 
-    private static var ctx_params: llama_context_params {
+    private static func ctx_params(deviceConfig: ZenzaiDeviceConfig) -> llama_context_params {
         let n_threads = max(1, min(8, ProcessInfo.processInfo.processorCount - 2))
         debug("Using \(n_threads) threads")
         var ctx_params = llama_context_default_params()
@@ -101,10 +211,20 @@ final class ZenzContext {
         ctx_params.n_threads       = Int32(n_threads)
         ctx_params.n_threads_batch = Int32(n_threads)
         ctx_params.n_batch = 512
+
+        // Configure offload_kqv based on device type
+        #if Zenzai
+        if deviceConfig.gpuLayers > 0 {
+            ctx_params.offload_kqv = true
+        } else {
+            ctx_params.offload_kqv = false
+        }
+        #endif
+
         return ctx_params
     }
 
-    static func createContext(path: String) throws -> ZenzContext {
+    static func createContext(path: String, deviceConfig: ZenzaiDeviceConfig = ZenzaiDeviceConfig()) throws -> ZenzContext {
         llama_backend_init()
         ggml_backend_load_all();
 
@@ -116,26 +236,37 @@ final class ZenzContext {
 
         var model_params = llama_model_default_params()
         model_params.use_mmap = true
-        #if ZenzaiCPU
-        // CPU 専用: GPU へのオフロードを無効化
-        model_params.n_gpu_layers = 0
-        model_params.split_mode = LLAMA_SPLIT_MODE_NONE
-        #elseif Zenzai
-        model_params.n_gpu_layers = PublicAzkkcApi.shared.getGpuLayers()
-        #else
-        model_params.n_gpu_layers = Int(PublicAzkkcApi.shared.getGpuLayers())
+
+        #if Zenzai
+        // Configure GPU layers based on device config
+        model_params.n_gpu_layers = deviceConfig.gpuLayers
+
+        // Set device if specified
+        if let deviceName = deviceConfig.deviceName {
+            if let device = ggml_backend_dev_by_name(deviceName) {
+                var deviceArray = [device, nil]
+                let devicePtr = UnsafeMutablePointer<ggml_backend_dev_t?>.allocate(capacity: 2)
+                devicePtr.initialize(from: &deviceArray, count: 2)
+                model_params.devices = devicePtr
+            }
+        }
         #endif
+
         let model = llama_model_load_from_file(path, model_params)
+
+        #if Zenzai
+        // Free the allocated device pointer if it was set
+        if model_params.devices != nil {
+            model_params.devices?.deallocate()
+        }
+        #endif
+
         guard let model else {
             debug("Could not load model at \(path)")
             throw ZenzError.couldNotLoadModel(path: path)
         }
 
-        var params = ctx_params
-        #if ZenzaiCPU
-        // CPU 専用: KV / KQV 等の GPU オフロードを完全に無効化
-        params.offload_kqv = false
-        #endif
+        let params = ctx_params(deviceConfig: deviceConfig)
         let context = llama_init_from_model(model, params)
         guard let context else {
             debug("Could not load context!")
@@ -148,15 +279,83 @@ final class ZenzContext {
             throw ZenzError.couldNotLoadVocab
         }
 
-        return ZenzContext(model: model, context: context, vocab: vocab)
+        return ZenzContext(model: model, context: context, vocab: vocab, deviceConfig: deviceConfig, modelPath: path)
+    }
+
+    /// Update device configuration dynamically
+    /// This will unload and reload the model with new parameters
+    func updateDeviceConfig(_ newConfig: ZenzaiDeviceConfig) throws {
+        // Store the new config
+        self.currentDeviceConfig = newConfig
+
+        // Free existing resources
+        llama_free(self.context)
+        llama_model_free(self.model)
+
+        // Reload model with new parameters
+        var model_params = llama_model_default_params()
+        model_params.use_mmap = true
+
+        #if Zenzai
+        // Configure GPU layers based on device config
+        model_params.n_gpu_layers = newConfig.gpuLayers
+
+        // Set device if specified
+        if let deviceName = newConfig.deviceName {
+            if let device = ggml_backend_dev_by_name(deviceName) {
+                var deviceArray = [device, nil]
+                let devicePtr = UnsafeMutablePointer<ggml_backend_dev_t?>.allocate(capacity: 2)
+                devicePtr.initialize(from: &deviceArray, count: 2)
+                model_params.devices = devicePtr
+            }
+        }
+        #endif
+
+        let model = llama_model_load_from_file(self.modelPath, model_params)
+
+        #if Zenzai
+        // Free the allocated device pointer if it was set
+        if model_params.devices != nil {
+            model_params.devices?.deallocate()
+        }
+        #endif
+
+        guard let model else {
+            debug("Could not reload model at \(self.modelPath)")
+            throw ZenzError.couldNotLoadModel(path: self.modelPath)
+        }
+        self.model = model
+
+        // Reload context with new parameters
+        let params = Self.ctx_params(deviceConfig: newConfig)
+        let context = llama_init_from_model(model, params)
+        guard let context else {
+            debug("Could not load context!")
+            throw ZenzError.couldNotLoadContext
+        }
+        self.context = context
+
+        // Reload vocab
+        let vocab = llama_model_get_vocab(model)
+        guard let vocab else {
+            debug("Could not load vocab!")
+            throw ZenzError.couldNotLoadVocab
+        }
+        self.vocab = vocab
+
+        // Reset state
+        self.prevInput = []
+        self.prevPrompt = []
+    }
+
+    /// Get current device configuration
+    func getDeviceConfig() -> ZenzaiDeviceConfig {
+        return self.currentDeviceConfig
     }
 
     func reset_context() throws {
         llama_free(self.context)
-        var params = Self.ctx_params
-        #if ZenzaiCPU
-        params.offload_kqv = false
-        #endif
+        let params = Self.ctx_params(deviceConfig: self.currentDeviceConfig)
         let context = llama_init_from_model(self.model, params)
         guard let context else {
             debug("Could not load context!")

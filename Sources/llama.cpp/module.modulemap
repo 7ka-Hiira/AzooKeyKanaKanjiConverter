@@ -6,6 +6,7 @@ module llama [system] {
 
     link "llama"
     link "ggml"
+    link "ggml-base"
 
     export *
 }

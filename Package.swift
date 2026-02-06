@@ -8,7 +8,7 @@ let swiftSettings: [SwiftSetting] = [
     .enableUpcomingFeature("ExistentialAny"),
     .enableUpcomingFeature("MemberImportVisibility"),
     .enableUpcomingFeature("InternalImportsByDefault"),
-    .interoperabilityMode(.Cxx, .when(traits: ["Zenzai"/*, "ZenzaiCPU"*/]))
+    .interoperabilityMode(.Cxx, .when(traits: ["Zenzai"]))
 ]
 
 var dependencies: [Package.Dependency] = [
@@ -27,7 +27,7 @@ var efficientNGramDependencies: [Target.Dependency] = [
 #if (!os(Linux) || !canImport(Android)) && !os(Windows)
 // Android環境・Windows環境ではSwiftyMarisaが利用できないため、EfficientNGramは除外する。
 dependencies.append(.package(url: "https://github.com/ensan-hcl/SwiftyMarisa", from: "0.0.1"))
-efficientNGramDependencies.append(.product(name: "SwiftyMarisa", package: "SwiftyMarisa", condition: .when(traits: ["Zenzai"/*, "ZenzaiCPU"*/])))
+efficientNGramDependencies.append(.product(name: "SwiftyMarisa", package: "SwiftyMarisa", condition: .when(traits: ["Zenzai"])))
 #endif
 
 
@@ -111,10 +111,10 @@ func checkObjcAvailability() -> Bool {
         let linkCheck = Process()
         linkCheck.executableURL = URL(fileURLWithPath: "/bin/sh")
         linkCheck.arguments = ["-c", "echo 'int main() { return 0; }' | clang -x c - -lobjc -o /dev/null"]
-        
+
         try linkCheck.run()
         linkCheck.waitUntilExit()
-        
+
         if linkCheck.terminationStatus != 0 {
             print("Cannot link with -lobjc")
             return false
@@ -156,7 +156,7 @@ targets.append(
         dependencies: [
             "SwiftUtils",
             .target(name: "EfficientNGram"),
-            .target(name: "llama.cpp", condition: .when(traits: ["Zenzai"/*, "ZenzaiCPU"*/])),
+            .target(name: "llama.cpp", condition: .when(traits: ["Zenzai"])),
             .product(name: "Collections", package: "swift-collections"),
         ],
         swiftSettings: swiftSettings
@@ -185,7 +185,6 @@ let package = Package(
     ],
     traits: [
         .trait(name: "Zenzai"),
-        //.trait(name: "ZenzaiCPU"),
         .default(enabledTraits: [])
     ],
     dependencies: dependencies,

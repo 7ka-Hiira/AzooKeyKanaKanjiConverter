@@ -1,4 +1,4 @@
-#if !Zenzai && !ZenzaiCPU
+#if !Zenzai
 // Zenzaiが有効でない場合、このMock実装を有効化する
 private func unimplemented<T>() -> T {
     fatalError("unimplemented")
@@ -9,11 +9,12 @@ package typealias llama_pos = Int32
 package typealias llama_seq_id = Int32
 
 package struct llama_context_params {
-    package var seed: Int
-    package var n_ctx: Int
+    package var seed: Int32
+    package var n_ctx: Int32
     package var n_threads: Int32
     package var n_threads_batch: Int32
-    package var n_batch: Int
+    package var n_batch: Int32
+    package var offload_kqv: Bool
 }
 package func llama_context_default_params() -> llama_context_params { unimplemented() }
 
@@ -32,9 +33,27 @@ package func ggml_backend_dev_count() {}
 package func llama_backend_init() {}
 package func llama_backend_free() {}
 
+// GGML backend device types and functions (for backend DL support)
+package typealias ggml_backend_dev_t = OpaquePointer
+
+package func ggml_backend_load_all() {}
+package func ggml_backend_load_all_from_path(_: String) {}
+package func ggml_backend_dev_count() -> Int { unimplemented() }
+package func ggml_backend_dev_get(_: Int) -> ggml_backend_dev_t? { unimplemented() }
+package func ggml_backend_dev_by_name(_: String) -> ggml_backend_dev_t? { unimplemented() }
+package func ggml_backend_dev_name(_: ggml_backend_dev_t) -> UnsafePointer<CChar>? { unimplemented() }
+package func ggml_backend_dev_description(_: ggml_backend_dev_t) -> UnsafePointer<CChar>? { unimplemented() }
+package func ggml_backend_dev_type(_: ggml_backend_dev_t) -> Int32 { unimplemented() }
+
+// Device type constants
+package let GGML_BACKEND_DEVICE_TYPE_CPU: Int32 = 0
+package let GGML_BACKEND_DEVICE_TYPE_GPU: Int32 = 1
+package let GGML_BACKEND_DEVICE_TYPE_ACCEL: Int32 = 2
+
 package struct llama_model_params {
     package var use_mmap: Bool
-    package var n_gpu_layers: Int
+    package var n_gpu_layers: Int32
+    package var devices: UnsafeMutablePointer<ggml_backend_dev_t?>?
 }
 package func llama_model_default_params() -> llama_model_params { unimplemented() }
 
@@ -51,7 +70,7 @@ package struct llama_batch {
     package var n_seq_id: [llama_seq_id]
     package var seq_id: [[llama_seq_id]?]
     package var logits: UnsafeMutablePointer<Float>
-    package var n_tokens: Int
+    package var n_tokens: Int32
 }
 package func llama_batch_init(_: Int, _: Int, _: Int) -> llama_batch { unimplemented() }
 package func llama_batch_free(_: llama_batch) {}

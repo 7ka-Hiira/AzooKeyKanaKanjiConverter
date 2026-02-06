@@ -2,16 +2,12 @@
 set -e
 
 USE_ZENZAI=0
-USE_ZENZAI_CPU=0
 USE_DEBUG=0
 
 # 引数の解析
 for arg in "$@"; do
   if [ "$arg" = "--zenzai" ]; then
     USE_ZENZAI=1
-  fi
-  if [ "$arg" = "--zenzai-cpu" ]; then
-    USE_ZENZAI_CPU=1
   fi
   if [ "$arg" = "--debug" ]; then
     echo "⚠️ Debug mode is enabled. This may cause performance issues."
@@ -28,9 +24,6 @@ fi
 if [ "$USE_ZENZAI" -eq 1 ]; then
   echo "📦 Building with Zenzai support..."
   swift build -c $CONFIGURATION -Xcxx -xobjective-c++ --traits Zenzai
-elif [ "$USE_ZENZAI_CPU" -eq 1 ]; then
-  echo "📦 Building with ZenzaiCPU (CPU-only) support..."
-  swift build -c $CONFIGURATION -Xcxx -xobjective-c++ --traits ZenzaiCPU
 else
   echo "📦 Building..."
   swift build -c $CONFIGURATION -Xcxx -xobjective-c++
