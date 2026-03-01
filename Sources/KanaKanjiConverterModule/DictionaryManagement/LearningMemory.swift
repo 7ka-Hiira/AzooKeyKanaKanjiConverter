@@ -27,6 +27,27 @@ private struct MetadataElement: CustomDebugStringConvertible {
 
 /// 長期記憶用の構造体
 struct LongTermLearningMemory {
+    private static func errorLogURL(directoryURL: URL) -> URL {
+        directoryURL.appendingPathComponent("memory-error.log", isDirectory: false)
+    }
+    private static func appendErrorLog(_ message: String, directoryURL: URL) {
+        let formatter = ISO8601DateFormatter()
+        let timestamp = formatter.string(from: Date())
+        let logLine = "[\(timestamp)] \(message)\n"
+        guard let data = logLine.data(using: .utf8) else {
+            return
+        }
+        let logURL = errorLogURL(directoryURL: directoryURL)
+        if FileManager.default.fileExists(atPath: logURL.path) {
+            if let handle = try? FileHandle(forWritingTo: logURL) {
+                handle.seekToEndOfFile()
+                handle.write(data)
+                handle.closeFile()
+            }
+        } else {
+            try? data.write(to: logURL)
+        }
+    }
     private static func pauseFileURL(directoryURL: URL) -> URL {
         directoryURL.appendingPathComponent(".pause", isDirectory: false)
     }
@@ -196,6 +217,9 @@ struct LongTermLearningMemory {
             )
         }
 
+        appendErrorLog("mearging...", directoryURL: directoryURL)
+
+
         // MARK: ここで、前回のファイルの更新は問題なく成功していることが確認できる
         let startTime = Date()
         let today = LearningManager.today
@@ -213,6 +237,7 @@ struct LongTermLearningMemory {
             entryCount = 0
             metadataOffset = ltMetadata.count
             debug("LongTermLearningMemory merge metadata header is too short", ltMetadata.count)
+            appendErrorLog("metadata header is too short (\(ltMetadata.count) bytes)", directoryURL: directoryURL)
         }
 
         debug("LongTermLearningMemory merge entryCount", entryCount, ltMetadata.count)
@@ -225,10 +250,12 @@ struct LongTermLearningMemory {
                 loudstxtData = try Data(contentsOf: loudsTxt3FileURL("\(loudstxtIndex)", asTemporaryFile: false, directoryURL: directoryURL))
             } catch {
                 debug("LongTermLearningMemory merge failed to read \(loudstxtIndex)", error)
+                appendErrorLog("failed to read loudstxt shard \(loudstxtIndex): \(error)", directoryURL: directoryURL)
                 continue
             }
             guard loudstxtData.count >= 2 else {
                 debug("LongTermLearningMemory merge loudstxt file too short", loudstxtIndex, loudstxtData.count)
+                appendErrorLog("loudstxt shard \(loudstxtIndex) header too short (\(loudstxtData.count) bytes)", directoryURL: directoryURL)
                 continue
             }
             // loudstxt3の数
@@ -237,6 +264,7 @@ struct LongTermLearningMemory {
             let indicesEnd = indicesStart + 4 * count
             guard loudstxtData.count >= indicesEnd else {
                 debug("LongTermLearningMemory merge loudstxt indices truncated", loudstxtIndex, loudstxtData.count, count)
+                appendErrorLog("loudstxt shard \(loudstxtIndex) indices truncated (count=\(count), bytes=\(loudstxtData.count))", directoryURL: directoryURL)
                 continue
             }
             let indices = loudstxtData[indicesStart ..< indicesEnd].toArray(of: UInt32.self)
@@ -249,6 +277,7 @@ struct LongTermLearningMemory {
                 guard metadataOffset + 1 <= ltMetadata.endIndex else {
                     debug("LongTermLearningMemory merge metadata item count missing", metadataOffset, ltMetadata.count)
                     metadataOffset = ltMetadata.endIndex
+                    appendErrorLog("metadata item count missing at offset \(metadataOffset)", directoryURL: directoryURL)
                     break
                 }
                 let itemCount = Int(ltMetadata[metadataOffset ..< metadataOffset + 1].toArray(of: UInt8.self)[0])
@@ -257,6 +286,7 @@ struct LongTermLearningMemory {
                 guard metadataOffset + metadataBlockSize <= ltMetadata.endIndex else {
                     debug("LongTermLearningMemory merge metadata truncated", itemCount, ltMetadata.count, metadataOffset)
                     metadataOffset = ltMetadata.endIndex
+                    appendErrorLog("metadata truncated (itemCount=\(itemCount), offset=\(metadataOffset))", directoryURL: directoryURL)
                     break
                 }
                 let metadata = (0 ..< itemCount).map {
@@ -268,12 +298,14 @@ struct LongTermLearningMemory {
                 // バイナリ内部でのindex
                 guard i < indices.count else {
                     debug("LongTermLearningMemory merge indices count mismatch", i, indices.count)
+                    appendErrorLog("indices count mismatch (i=\(i), count=\(indices.count))", directoryURL: directoryURL)
                     break
                 }
                 let startIndex = Int(indices[i])
                 let endIndex = i == (indices.endIndex - 1) ? loudstxtData.endIndex : Int(indices[i + 1])
                 guard startIndex < endIndex, endIndex <= loudstxtData.count else {
                     debug("LongTermLearningMemory merge loudstxt entry range invalid", startIndex, endIndex, loudstxtData.count)
+                    appendErrorLog("invalid loudstxt entry range (start=\(startIndex), end=\(endIndex), bytes=\(loudstxtData.count))", directoryURL: directoryURL)
                     continue
                 }
                 let elements = LOUDS.parseBinary(binary: loudstxtData[startIndex ..< endIndex])
