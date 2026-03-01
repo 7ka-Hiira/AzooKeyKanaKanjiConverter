@@ -42,12 +42,12 @@ extension Subcommands {
         var configZenzaiProfile: String?
         @Option(name: [.customLong("config_topic")], help: "enable topic prompting for zenz-v3 and later.")
         var configZenzaiTopic: String?
-        @Flag(name: [.customLong("zenz_v1")], help: "Use zenz_v1 model.")
-        var zenzV1 = false
         @Flag(name: [.customLong("zenz_v2")], help: "Use zenz_v2 model.")
         var zenzV2 = false
         @Flag(name: [.customLong("zenz_v3")], help: "Use zenz_v3 model.")
         var zenzV3 = false
+        @Flag(name: [.customLong("experimental_zenzai_predictive_input")], help: "Enable experimental zenzai predictive input.")
+        var experimentalZenzaiPredictiveInput = false
         @Option(name: [.customLong("config_zenzai_base_lm")], help: "Marisa files for Base LM.")
         var configZenzaiBaseLM: String?
         @Option(name: [.customLong("config_zenzai_personal_lm")], help: "Marisa files for Personal LM.")
@@ -84,13 +84,13 @@ extension Subcommands {
         }
 
         @MainActor mutating func run() async {
-            if self.zenzV1 || self.zenzV2 {
+            if self.zenzV2 {
                 print("\(bold: "We strongly recommend to use zenz-v3 models")")
             }
-            if (self.zenzV1 || self.zenzV2 || self.zenzV3) && self.zenzWeightPath.isEmpty {
+            if (self.zenzV2 || self.zenzV3) && self.zenzWeightPath.isEmpty {
                 preconditionFailure("\(bold: "zenz version is specified but --zenz weight is not specified")")
             }
-            if !self.zenzWeightPath.isEmpty && (!self.zenzV1 && !self.zenzV2 && !self.zenzV3) {
+            if !self.zenzWeightPath.isEmpty && (!self.zenzV2 && !self.zenzV3) {
                 print("zenz version is not specified. By default, zenz-v3 will be used.")
             }
 
@@ -191,17 +191,56 @@ extension Subcommands {
                         print("anything should not be saved because the learning type is not for update memory")
                     }
                     continue
-                case ":p", ":pred":
-                    // 次の文字の予測を取得する
-                    let results = converter.predictNextCharacter(
-                        leftSideContext: leftSideContext,
-                        count: 10,
-                        options: requestOptions(learningType: learningType, memoryDirectory: memoryDirectory, leftSideContext: leftSideContext)
-                    )
-                    if let firstCandidate = results.first {
-                        leftSideContext.append(firstCandidate.character)
+                case let command where command == ":ip" || command.hasPrefix(":ip "):
+                    // 入力中の次の文字の予測を取得する (zenz-v3)
+                    let parts = command.split(separator: " ")
+                    var requestedCount: Int = 1
+                    var maxEntropy: Float?
+                    var minLength: Int = 1
+                    for part in parts.dropFirst() {
+                        if let count = Int(part) {
+                            requestedCount = count
+                            continue
+                        }
+                        if part.hasPrefix("max_entropy=") {
+                            let value = part.dropFirst("max_entropy=".count)
+                            if let parsed = Float(value) {
+                                maxEntropy = parsed
+                            }
+                            continue
+                        }
+                        if part.hasPrefix("min_length=") {
+                            let value = part.dropFirst("min_length=".count)
+                            if let parsed = Int(value) {
+                                minLength = parsed
+                            }
+                        }
                     }
-                    continue
+                    let predictCount = max(1, min(requestedCount, 50))
+                    let predictMinLength = max(1, min(minLength, predictCount))
+                    let ipStart = Date()
+                    let (predictedText, suffixCount) = converter.predictNextInputText(
+                        leftSideContext: leftSideContext,
+                        composingText: composingText,
+                        count: predictCount,
+                        minLength: predictMinLength,
+                        maxEntropy: maxEntropy,
+                        options: requestOptions(learningType: learningType, memoryDirectory: memoryDirectory, leftSideContext: leftSideContext),
+                        inputStyle: inputStyle,
+                        debugPossibleNexts: true
+                    )
+                    guard !predictedText.isEmpty else {
+                        continue
+                    }
+                    print("\(bold: "Time (ip):") \(-ipStart.timeIntervalSinceNow)")
+
+                    if suffixCount > 0 {
+                        composingText.deleteBackwardFromCursorPosition(count: suffixCount)
+                    }
+
+                    let insertText = (inputStyle == .roman2kana) ? predictedText.toHiragana() : predictedText
+                    composingText.insertAtCursorPosition(insertText, inputStyle: inputStyle)
+                    input = insertText
                 case ":h", ":help":
                     // ヘルプ
                     print("""
@@ -211,7 +250,7 @@ extension Subcommands {
                     \(bold: ":d, :del") - delete one character
                     \(bold: ":n, :next") - see more candidates
                     \(bold: ":s, :save") - save memory to temporary directory
-                    \(bold: ":p, :pred") - predict next one character
+                    \(bold: ":ip [n] [max_entropy=F] [min_length=N]") - predict next input character(s) (zenz-v3)
                     \(bold: ":%d") - select candidate at that index (like :3 to select 3rd candidate)
                     \(bold: ":ctx %s") - set the string as context
                     \(bold: ":input %s") - insert special characters to input. Supported special characters:
@@ -297,9 +336,7 @@ extension Subcommands {
         }
 
         func requestOptions(learningType: LearningType, memoryDirectory: URL, leftSideContext: String?) -> ConvertRequestOptions {
-            let zenzaiVersionDependentMode: ConvertRequestOptions.ZenzaiVersionDependentMode = if self.zenzV1 {
-                .v1
-            } else if self.zenzV2 {
+            let zenzaiVersionDependentMode: ConvertRequestOptions.ZenzaiVersionDependentMode = if self.zenzV2 {
                 .v2(.init(profile: self.configZenzaiProfile, leftSideContext: leftSideContext))
             } else {
                 .v3(.init(profile: self.configZenzaiProfile, topic: self.configZenzaiTopic, leftSideContext: leftSideContext))
@@ -340,6 +377,7 @@ extension Subcommands {
                     personalizationMode: personalizationMode,
                     versionDependentMode: zenzaiVersionDependentMode
                 ),
+                experimentalZenzaiPredictiveInput: self.experimentalZenzaiPredictiveInput,
                 metadata: .init(versionString: "anco for debugging")
             )
             if self.onlyWholeConversion {
